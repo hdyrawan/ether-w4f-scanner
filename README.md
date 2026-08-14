@@ -1,4 +1,4 @@
-# ether-w4f-scanner
+# w4f
 
 **Passive TLS / CDN / WAF / edge fingerprinting for API endpoints.**
 
