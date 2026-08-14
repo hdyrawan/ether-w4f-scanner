@@ -415,6 +415,13 @@ def match_block_page(title: str, head_text: str, body_text: str, status: str) ->
         return {"vendor": "f5-asm", "title": title, "status": status}
     if "attention required" in t and "cloudflare" in body_text:
         return {"vendor": "cloudflare", "title": title, "status": status}
+    # AWS WAF fronted by CloudFront: a 403 with CloudFront's generic error
+    # title. Distinguish a WAF BLOCK from an ordinary CloudFront 4xx by the
+    # "Request blocked." reason line (other CloudFront errors say
+    # "Bad request.", "The distribution ...", etc.) — the title alone would
+    # mislabel every CloudFront error as a WAF.
+    if "the request could not be satisfied" in t and "request blocked" in body_text:
+        return {"vendor": "aws-waf", "title": title, "status": status}
     if "incapsula" in body_text or "incap_ses" in head_text:
         return {"vendor": "imperva", "title": title, "status": status}
     return None
