@@ -7,9 +7,13 @@ import concurrent.futures as cf
 import json
 import sys
 
+from w4f import __version__
 from w4f.banner import BANNER
 from w4f.report import fmt_block, md_doc
 from w4f.scanner import probe_one
+
+
+_TAGLINE = "passive TLS / CDN / WAF / edge fingerprinting"
 
 
 def _load_targets_from_json(path: str) -> list[str]:
@@ -97,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.quiet:
         print(BANNER)
+        print(f"  {_TAGLINE}   v{__version__}")
         print()
         for r in results:
             print(fmt_block(r))

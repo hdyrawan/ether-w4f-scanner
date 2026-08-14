@@ -8,6 +8,8 @@ dependency — pure stdlib, works anywhere.
 
 from __future__ import annotations
 
+import re
+
 # Each glyph: 11 rows, trailing '@' endmarks already stripped, hardblank '$'
 # replaced with space. Kept verbatim from DOS Rebel.flf so the output matches
 # patorjk.com/software/taag with f=Rebel&x=none.
@@ -61,6 +63,13 @@ _COLORS = {"w": _RED, "4": "", "f": _BLUE}
 
 _ROWS = 11
 
+_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def _plain(s: str) -> str:
+    """Strip ANSI codes so blank-row detection sees spaces only."""
+    return _ANSI_RE.sub("", s)
+
 
 def render_banner(text: str = "w4f", colors: dict | None = None) -> str:
     """Render the Rebel banner. Unknown chars render as blank columns.
@@ -81,9 +90,10 @@ def render_banner(text: str = "w4f", colors: dict | None = None) -> str:
         for i in range(_ROWS):
             row = glyph[i]
             lines[i] += (code + row + _RESET) if code else row
-    # Trim fully-blank leading/trailing rows for a tight banner.
-    start = next((i for i, l in enumerate(lines) if l.strip()), 0)
-    end = next((i for i in range(_ROWS - 1, -1, -1) if lines[i].strip()), _ROWS - 1)
+    # Trim fully-blank leading/trailing rows (blank = no visible chars after
+    # ANSI stripping) for a tight banner.
+    start = next((i for i, l in enumerate(lines) if _plain(l).strip()), 0)
+    end = next((i for i in range(_ROWS - 1, -1, -1) if _plain(lines[i]).strip()), _ROWS - 1)
     return "\n".join(lines[start : end + 1])
 
 
