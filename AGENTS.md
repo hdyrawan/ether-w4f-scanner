@@ -48,11 +48,18 @@ the tool and its documentation.
   trailing `@` endmarks stripped, all 11 rows kept) — do not "improve" the
   layout, it must match taag.
 - **Testing is mandatory before a release.** `python -m pytest` runs the
-  offline suite (71 tests; local TLS server, no internet). The vendor
+  offline suite (72 tests; local TLS server, no internet). The vendor
   signature table has per-regex sanity tests — when adding a vendor or
   signature, add a positive AND a negative case to `tests/`. The
   `--verify` block-page matcher tests the two field traps (title at end of
   body, localized titles). CI runs 3.10/3.11/3.12 + a no-optional-deps job.
+- **Publishing to PyPI is a tag push.** The `publish.yml` workflow is the
+  trusted publisher for hdyrawan/w4f (workflow name must stay `publish.yml`,
+  no environment). To release: bump `__version__` in `w4f/__init__.py` AND
+  `pyproject.toml` (setup.py reads from `__init__`, so only those two),
+  update the README banner version, `python -m build` + `twine check`, run
+  the tests, commit, then `git tag v<version> && git push origin v<version>`
+  — the workflow builds, tests, and publishes via OIDC (no token).
 - **Pure stdlib + two optional deps.** `cryptography` (cert parsing) and
   `dnspython` (CNAME/PTR) are optional; the scanner must degrade gracefully
   without either. Never add a hard dependency.
