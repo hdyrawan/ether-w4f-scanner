@@ -216,3 +216,49 @@ def md_doc(results: list[dict]) -> str:
         "## Per-host detail\n\n" +
         "\n\n".join(_fmt_md_block(r) for r in results) + "\n"
     )
+
+
+# Stable CSV header — one row per host, primary (top) verdict.
+CSV_HEADER = [
+    "host", "port", "ips", "cname", "verdict", "confidence", "signals",
+    "mtls", "tls_version", "alpn", "spki", "http_status", "block", "error",
+]
+
+
+def csv_doc(results: list[dict]) -> str:
+    """Flat CSV, one row per scanned host (primary/top verdict).
+
+    Uses the stdlib csv module for proper escaping; header row is stable
+    (CSV_HEADER). Fields come straight off the result dict — no
+    fingerprint-semantics changes, just a tabular projection of what was
+    already probed.
+    """
+    import csv
+    import io
+
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(CSV_HEADER)
+    for r in results:
+        ver = r.get("verdict") or []
+        top = ver[0] if ver else {}
+        tls = r.get("tls") or {}
+        http = tls.get("http") or {}
+        blk = r.get("block") or {}
+        w.writerow([
+            r.get("host") or r.get("hostport", ""),
+            r.get("port", ""),
+            ", ".join(r.get("ips", []) or []),
+            ", ".join(r.get("cname", []) or []),
+            top.get("vendor", ""),
+            top.get("confidence", ""),
+            top.get("signals", ""),
+            r.get("mtls", ""),
+            tls.get("tls_version", ""),
+            tls.get("alpn", ""),
+            r.get("spki_sha256", ""),
+            http.get("status", ""),
+            blk.get("vendor", ""),
+            r.get("error", ""),
+        ])
+    return buf.getvalue()

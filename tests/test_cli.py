@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 from w4f.cli import _load_targets_from_json, _validate_hostport, build_parser
 
@@ -67,6 +68,79 @@ class TestTargetJson:
             _load_targets_from_json(str(p))
 
 
+class TestTargetFile:
+    def test_comments_and_blanks_ignored(self, tmp_path):
+        from w4f.cli import _load_targets_from_file
+        p = tmp_path / "hosts.txt"
+        p.write_text(
+            "# sweep list\n"
+            "a.example.com\n"
+            "\n"
+            "  b.example.com  \n"
+            "   # indented comment\n"
+            "c.example.com:8443\n"
+        )
+        assert _load_targets_from_file(str(p)) == [
+            "a.example.com", "b.example.com", "c.example.com:8443"]
+
+    def test_missing_file_raises(self, tmp_path):
+        from w4f.cli import _load_targets_from_file
+        import pytest
+        with pytest.raises(FileNotFoundError):
+            _load_targets_from_file(str(tmp_path / "nope.txt"))
+
+
+class TestTargetCsv:
+    def test_header_with_host_column(self, tmp_path):
+        from w4f.cli import _load_targets_from_csv
+        p = tmp_path / "targets.csv"
+        p.write_text("ip,host,cloudflare\n1.2.3.4,a.example.com,false\n1.2.3.5,b.example.com,false\n")
+        assert _load_targets_from_csv(str(p)) == ["a.example.com", "b.example.com"]
+
+    def test_header_with_subdomain_column(self, tmp_path):
+        from w4f.cli import _load_targets_from_csv
+        p = tmp_path / "subs.csv"
+        p.write_text("subdomain,ip\nc.example.com,1.2.3.6\n")
+        assert _load_targets_from_csv(str(p)) == ["c.example.com"]
+
+    def test_bare_column_list_first_column(self, tmp_path):
+        # no header row: every row's first column is the host
+        from w4f.cli import _load_targets_from_csv
+        p = tmp_path / "bare.csv"
+        p.write_text("a.example.com\nb.example.com:443\n")
+        assert _load_targets_from_csv(str(p)) == ["a.example.com", "b.example.com:443"]
+
+    def test_empty_file(self, tmp_path):
+        from w4f.cli import _load_targets_from_csv
+        p = tmp_path / "empty.csv"
+        p.write_text("")
+        assert _load_targets_from_csv(str(p)) == []
+
+
+class TestStdin:
+    def test_reads_hosts_when_not_tty(self, monkeypatch, capsys):
+        from w4f.cli import main
+        import io
+        # fake pipe stdin: isatty() False + one host per line, comments ok
+        monkeypatch.setattr(sys, "stdin", io.StringIO("# pipe\n8.8.8.8\n"))
+        monkeypatch.setattr(sys, "argv", ["w4f", "--no-http", "--timeout", "2"])
+        rc = main()
+        out = capsys.readouterr().out
+        assert rc in (0, 1)  # scanned or DNS-failed — either way it RAN
+        assert "8.8.8.8" in out
+
+    def test_pipe_hosts_are_validated_and_deduped(self, monkeypatch, capsys):
+        from w4f.cli import main
+        import io
+        # duplicate + a junk line: dedup after validation, junk dropped
+        monkeypatch.setattr(sys, "stdin", io.StringIO("8.8.8.8\n8.8.8.8\nfile:///etc/passwd\n"))
+        monkeypatch.setattr(sys, "argv", ["w4f", "--no-http", "--timeout", "2"])
+        rc = main()
+        err = capsys.readouterr().err
+        assert "dropping target 'file:///etc/passwd'" in err
+        assert rc in (0, 1)
+
+
 class TestParser:
     def test_version_flag(self):
         from w4f import __version__
@@ -102,8 +176,13 @@ class TestParser:
         assert ap.parse_args(["--target", "a.com"]).verify is False
         assert ap.parse_args(["--target", "a.com", "--verify"]).verify is True
 
-    def test_no_targets_exits_2(self):
+    def test_no_targets_exits_2(self, monkeypatch):
         from w4f.cli import main
+        # A TTY stdin (no piped hosts) with no --target must exit 2.
+        class Tty:
+            def isatty(self):
+                return True
+        monkeypatch.setattr(sys, "stdin", Tty())
         assert main([]) == 2
 
 

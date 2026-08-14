@@ -205,3 +205,77 @@ class TestWsGrpcProbes:
         assert out["error"] is None
         assert out["ws"]["upgrade_supported"] is True
         assert "grpc" in out  # ran without raising
+
+
+class TestCsvOutput:
+    def test_header_row_stable(self):
+        from w4f.report import CSV_HEADER, csv_doc
+        out = csv_doc([])
+        assert out.splitlines()[0] == ",".join(CSV_HEADER)
+
+    def test_known_vendor_row(self):
+        from w4f.report import csv_doc
+        import csv
+        import io
+        results = [{
+            "host": "api.example.com", "hostport": "api.example.com:443",
+            "port": 443, "ips": ["104.18.1.79"], "cname": ["x.cdn.cloudflare.net"],
+            "mtls": False, "spki_sha256": "abc123",
+            "tls": {"tls_version": "TLSv1.3", "alpn": "h2",
+                    "http": {"status": "HTTP/1.1 200 OK"}},
+            "verdict": [{"vendor": "cloudflare", "confidence": 82, "signals": 3,
+                         "evidence": []}],
+            "block": {"vendor": "cloudflare"}, "error": None,
+        }]
+        rows = list(csv.reader(io.StringIO(csv_doc(results))))
+        assert rows[0][0] == "host"  # header first
+        row = rows[1]
+        assert row[0] == "api.example.com"
+        assert row[1] == "443"
+        assert row[4] == "cloudflare"   # verdict
+        assert row[5] == "82"           # confidence
+        assert row[6] == "3"            # signals
+        assert row[12] == "cloudflare"  # block
+
+    def test_csv_escaping_commas_in_ips(self):
+        from w4f.report import csv_doc
+        import csv
+        import io
+        results = [{
+            "host": "x.com", "hostport": "x.com:443", "port": 443,
+            "ips": ["1.2.3.4", "5.6.7.8"], "cname": [], "mtls": False,
+            "tls": {"tls_version": "TLSv1.2", "alpn": "http/1.1",
+                    "http": {"status": "HTTP/1.1 200 OK"}},
+            "verdict": [{"vendor": "nginx", "confidence": 7, "signals": 1,
+                         "evidence": []}],
+            "block": None, "error": None,
+        }]
+        rows = list(csv.reader(io.StringIO(csv_doc(results))))
+        assert rows[1][2] == "1.2.3.4, 5.6.7.8"  # ips cell round-trips with comma
+
+    def test_cli_writes_csv_with_quiet_and_json(self, tls_server, tmp_path):
+        from w4f.cli import main
+        import sys
+        srv = tls_server()  # fixture is a factory
+        csv_p = tmp_path / "out.csv"
+        json_p = tmp_path / "out.json"
+        monkeypatch_argv = ["w4f", "--target", f"127.0.0.1:{srv.port}",
+                            "--no-http", "--quiet", "--csv", str(csv_p),
+                            "--json", str(json_p), "--timeout", "5"]
+        old_argv, old_stdin = sys.argv, sys.stdin
+        sys.argv = monkeypatch_argv
+        class Tty:
+            def isatty(self):
+                return True
+        sys.stdin = Tty()
+        try:
+            rc = main()
+        finally:
+            sys.argv, sys.stdin = old_argv, old_stdin
+        assert rc == 0
+        assert csv_p.exists()
+        assert json_p.exists()
+        import json as _json
+        j = _json.loads(json_p.read_text())
+        assert j and j[0]["hostport"] == f"127.0.0.1:{srv.port}"
+        assert csv_p.read_text().splitlines()[0].startswith("host,port")

@@ -12,7 +12,7 @@ import time
 
 from w4f import __version__
 from w4f.banner import BANNER
-from w4f.report import fmt_block, md_doc
+from w4f.report import csv_doc, fmt_block, md_doc
 from w4f.scanner import probe_one
 
 
@@ -153,6 +153,60 @@ def _load_targets_from_json(path: str) -> list[str]:
     return list(dict.fromkeys(h.lower() for h in hosts if h))
 
 
+def _read_host_lines(lines) -> list[str]:
+    """One host[:port] per line; blank lines and # comments ignored.
+
+    Shared by stdin and --target-file so both behave identically.
+    """
+    hosts: list[str] = []
+    for raw in lines:
+        ln = raw.strip()
+        if not ln or ln.startswith("#"):
+            continue
+        hosts.append(ln)
+    return hosts
+
+
+def _load_targets_from_file(path: str) -> list[str]:
+    """Read a plain-text host list: one host[:port] per line, # comments
+    and blank lines ignored."""
+    with open(path, encoding="utf-8") as f:
+        return _read_host_lines(f)
+
+
+def _load_targets_from_csv(path: str) -> list[str]:
+    """Read a CSV target list.
+
+    Uses the column named ``host`` or ``subdomain`` when the first row is a
+    header; otherwise treats every row's FIRST column as the host (bare
+    column lists). Skips the header row in the header case. Never raises on
+    a malformed row — the caller's validation drops whatever is junk.
+    """
+    import csv
+
+    hosts: list[str] = []
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    if not rows:
+        return hosts
+    header = [h.strip().lower() for h in rows[0]]
+    # a header is present iff some cell names a host-ish column
+    host_idx = None
+    for i, name in enumerate(header):
+        if name in ("host", "subdomain", "hostname"):
+            host_idx = i
+            break
+    if host_idx is not None:
+        for row in rows[1:]:
+            if row and len(row) > host_idx:
+                hosts.append(row[host_idx])
+    else:
+        for row in rows:
+            if row and row[0].strip():
+                hosts.append(row[0])
+    return hosts
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="w4f",
@@ -168,6 +222,12 @@ def build_parser() -> argparse.ArgumentParser:
                          "objects, e.g. subdomainfinder.c99.nl), an array of strings, "
                          "or an object with a subdomains/hosts list. Each subdomain "
                          "is scanned like a --target.")
+    ap.add_argument("--target-file", metavar="FILE",
+                    help="plain-text host list, one host[:port] per line; "
+                         "# comments and blank lines ignored")
+    ap.add_argument("--target-csv", metavar="FILE",
+                    help="CSV target list — uses the column named host/subdomain "
+                         "when the first row is a header, else the first column")
     ap.add_argument("--path", default="/", help="HTTP path to GET (default /)")
     ap.add_argument("--timeout", type=float, default=8.0,
                     help="connect/TLS/HTTP timeout per host (default 8s)")
@@ -181,6 +241,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="write the full machine-readable result tree to FILE")
     ap.add_argument("--md", metavar="FILE",
                     help="write markdown per-host blocks (for docs) to FILE")
+    ap.add_argument("--csv", metavar="FILE",
+                    help="write a flat CSV — one row per host (primary verdict) "
+                         "with host, port, ips, cname, verdict, confidence, "
+                         "signals, mtls, tls_version, alpn, spki, http_status, "
+                         "block, error")
     ap.add_argument("--no-http", action="store_true",
                     help="TLS/cert/DNS only, skip the HTTP request")
     ap.add_argument("--verify", action="store_true",
@@ -208,6 +273,15 @@ def main(argv: list[str] | None = None) -> int:
     targets: list[str] = list(args.target or [])
     if args.target_json:
         targets += _load_targets_from_json(args.target_json)
+    if args.target_file:
+        targets += _load_targets_from_file(args.target_file)
+    if args.target_csv:
+        targets += _load_targets_from_csv(args.target_csv)
+    # Pipeline mode: no explicit target source and stdin is not a TTY
+    # (e.g. `subfinder -d example.com | w4f`). Same one-per-line format as
+    # --target-file, same validation below.
+    if not targets and not sys.stdin.isatty():
+        targets += _read_host_lines(sys.stdin)
 
     # Input validation: drop anything that cannot be a legitimate hostname
     # (control chars, URI schemes, overlong names) — a hostile --target-json
@@ -223,10 +297,12 @@ def main(argv: list[str] | None = None) -> int:
         if msg:
             print(f"warning: {msg}", file=sys.stderr)
         cleaned.append(t)
-    targets = cleaned
+    # Deduplicate after validation (case-insensitive), preserving order.
+    targets = list(dict.fromkeys(t.lower() for t in cleaned))
 
     if not targets:
-        print("error: nothing to scan — pass --target HOST and/or --target-json FILE",
+        print("error: nothing to scan — pass --target HOST and/or --target-json "
+              "--target-file --target-csv FILE (or pipe hosts on stdin)",
               file=sys.stderr)
         return 2
 
@@ -269,6 +345,10 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.md, "w") as f:
             f.write(md_doc(results))
         print(f"MD  -> {args.md}", file=sys.stderr)
+    if args.csv:
+        with open(args.csv, "w", newline="", encoding="utf-8") as f:
+            f.write(csv_doc(results))
+        print(f"CSV -> {args.csv}", file=sys.stderr)
 
     # A host that failed is a real failure: signal it so scripts can tell
     # "all clean" from "some hosts errored" without parsing the JSON.

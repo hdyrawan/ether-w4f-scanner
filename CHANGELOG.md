@@ -5,6 +5,30 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.22] — 2026-08-14
+
+Stdin/file target inputs + flat CSV output.
+
+- **stdin pipeline mode.** When no `--target`/`--target-json`/`--target-file`/
+  `--target-csv` is given and stdin is not a TTY, hosts are read from stdin
+  (one `host[:port]` per line, `#` comments and blanks ignored) —
+  `subfinder -d example.com -silent | w4f` works directly.
+- **`--target-file FILE`** — plain-text host list, one host per line,
+  comments/blanks ignored.
+- **`--target-csv FILE`** — CSV target list; uses the `host`/`subdomain`
+  column when the first row is a header, else the first column.
+- **All sources share the existing validation** (control chars / URI
+  schemes / overlong names dropped with warnings, private IPs warned) and
+  are deduplicated case-insensitively after validation; `--target` mixes
+  freely with file/stdin sources.
+- **`--csv FILE`** — flat CSV output for spreadsheets: one row per host,
+  primary (top) verdict; stable header `host,port,ips,cname,verdict,
+  confidence,signals,mtls,tls_version,alpn,spki,http_status,block,error`
+  via the stdlib `csv` module. Works with `--quiet` alongside `--json`/`--md`.
+- README usage examples + flags table updated (pipeline example included).
+
++9 tests (183 total).
+
 ## [0.1.21] — 2026-08-14
 
 Confidence accuracy fixes (found live on a CloudFront-fronted host).

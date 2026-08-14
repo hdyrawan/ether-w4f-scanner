@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.21
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.22
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -156,6 +156,19 @@ w4f --target 34.206.8.44
 # scan every subdomain from a subdomain-enumeration export
 w4f --target-json subdomains.json --json out.json --md out.md
 
+# plain-text host list (one per line; # comments and blanks ignored)
+w4f --target-file hosts.txt
+
+# CSV target list (uses the host/subdomain column when present, else column 1)
+w4f --target-csv targets.csv
+
+# pipeline: subdomain enumeration straight into w4f (stdin is read when no
+# explicit target source is given and stdin is not a TTY)
+subfinder -d example.com -silent | w4f --csv sweep.csv
+
+# flat CSV output for spreadsheets (primary verdict per host)
+w4f --target-file hosts.txt --csv sweep.csv
+
 # catch silent WAFs with the one-query active probe
 w4f --target api.example.com --verify
 
@@ -172,17 +185,24 @@ w4f --target api.example.com --no-http
 |---|---|
 | `--target HOST[:PORT]` | DNS name or IP, optional `:port` (default 443). Repeatable. |
 | `--target-json FILE` | targets from a JSON file — subdomain-enumeration export (array of `{"subdomain","ip","cloudflare"}` objects, e.g. subdomainfinder.c99.nl), array of strings, or `{subdomains:[...]}`. Each is scanned like a `--target`. |
+| `--target-file FILE` | plain-text host list, one `host[:port]` per line; `#` comments and blank lines ignored |
+| `--target-csv FILE` | CSV target list — uses the column named `host`/`subdomain` when the first row is a header, else the first column |
 | `--path PATH` | HTTP path to GET (default `/`) |
 | `--timeout SECONDS` | connect/TLS/HTTP timeout per host (default 8) |
 | `--workers N` | parallel host count (default 8) |
 | `--json FILE` | write the full machine-readable result tree to FILE |
 | `--md FILE` | write a markdown sweep (table + per-host blocks) to FILE |
+| `--csv FILE` | write a flat CSV — one row per host, primary verdict: host, port, ips, cname, verdict, confidence, signals, mtls, tls_version, alpn, spki, http_status, block, error |
 | `--no-http` | TLS/cert/DNS only, skip the HTTP request |
 | `--verify` | **OPT-IN active probe** — one benign `<script>` query per host; reports the WAF block page (FortiWeb / F5 ASM / Cloudflare / Imperva) |
 | `--version` | print version and exit |
 | `--quiet` | suppress the console banner and per-host blocks (for `--json`/`--md`) |
 
-At least one of `--target` / `--target-json` is required. Targets scan in
+Targets may come from `--target`, `--target-json`, `--target-file`,
+`--target-csv`, or — when none of those is given and stdin is not a TTY —
+from stdin (one host per line). All sources go through the same validation
+(control chars / URI schemes / overlong names dropped with a warning) and
+are deduplicated after validation. Targets scan in
 parallel; results print sorted by host. Progress and file paths go to stderr,
 the report to stdout — so `w4f ... > report.txt` and `w4f ... --quiet --json
 out.json | jq ...` keep the machine output clean.
@@ -206,7 +226,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.21
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.22
 
 api.example.com:443
 ip        45.60.16.239
@@ -408,7 +428,7 @@ jq -r '.[] | "\(.hostport)\t\(.tls.cert.spki_sha256)"' out.json
 |---|---|
 | `0` | everything scanned cleanly |
 | `1` | at least one host errored (DNS failure, connect refused, probe exception) — results still written |
-| `2` | usage error — no `--target`/`--target-json`, unreadable `--target-json` |
+| `2` | usage error — no target source at all, unreadable `--target-json` |
 
 ## Testing
 
