@@ -12,8 +12,10 @@ try:
     import dns.resolver
     import dns.reversename
     HAVE_DNS = True
+    _DNS = dns
 except ImportError:
     HAVE_DNS = False
+    _DNS = None
 
 try:
     from cryptography import x509
@@ -33,12 +35,19 @@ def resolve(host: str) -> dict:
     try:
         ip = ipaddress.ip_address(host)
         out["ips"] = [str(ip)]
+        if HAVE_DNS:
+            try:
+                rev = _DNS.reversename.from_address(str(ip))
+                for r in _DNS.resolver.resolve(rev, "PTR"):
+                    out["ptr"].append(str(r.target).rstrip("."))
+            except Exception:
+                pass
         return out
     except ValueError:
         pass
     if HAVE_DNS:
         try:
-            for r in dns.resolver.resolve(host, "CNAME"):
+            for r in _DNS.resolver.resolve(host, "CNAME"):
                 c = str(r.target).rstrip(".")
                 if c.lower() != host.lower():
                     out["cname"].append(c)
@@ -46,14 +55,14 @@ def resolve(host: str) -> dict:
             pass
         for qtype in ("A", "AAAA"):
             try:
-                for r in dns.resolver.resolve(host, qtype):
+                for r in _DNS.resolver.resolve(host, qtype):
                     out["ips"].append(str(r))
             except Exception:
                 pass
         for ip in out["ips"]:
             try:
-                rev = dns.reversename.from_address(ip)
-                for r in dns.resolver.resolve(rev, "PTR"):
+                rev = _DNS.reversename.from_address(ip)
+                for r in _DNS.resolver.resolve(rev, "PTR"):
                     out["ptr"].append(str(r.target).rstrip("."))
             except Exception:
                 pass
@@ -160,6 +169,7 @@ def tls_probe(host: str, port: int, path: str, timeout: float, do_http: bool) ->
     out: dict = {"port": port, "mtls": False, "http": None, "tls_error": None}
     ctx = ssl.create_default_context()
     verified = False
+    sock = None
     try:
         sock = socket.create_connection((host, port), timeout=timeout)
     except Exception as e:
@@ -225,6 +235,11 @@ def tls_probe(host: str, port: int, path: str, timeout: float, do_http: bool) ->
                 if not out.get("tls_error"):
                     out["tls_error"] = f"tls failed: {e2}"
     except Exception as e:
+        if sock is not None:
+            try:
+                sock.close()  # non-SSLError failure (timeout/OSError) — don't leak
+            except Exception:
+                pass
         out["tls_error"] = f"tls failed: {e}"
     out["chain_verified"] = verified if "chain_verified" not in out else out["chain_verified"]
     return out
@@ -324,10 +339,12 @@ def fingerprint(result: dict) -> list[dict]:
             evidence.append(f"cert: {cert.get('issuer_org') or cert.get('issuer')}")
         cname_re = rules.get("cname")
         if cname_re and re.search(cname_re, cnames):
-            evidence.append(f"cname: {result['cname'][0]}")
+            first = (result.get("cname") or [""])[0]
+            evidence.append(f"cname: {first}")
         ptr_re = rules.get("ptr")
         if ptr_re and re.search(ptr_re, ptrs):
-            evidence.append(f"ptr: {result['ptr'][0]}")
+            first = (result.get("ptr") or [""])[0]
+            evidence.append(f"ptr: {first}")
         for net in vendor_nets(name):
             for ip in ips:
                 try:

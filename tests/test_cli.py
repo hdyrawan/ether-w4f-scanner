@@ -79,6 +79,10 @@ class TestParser:
         assert ap.parse_args(["--target", "a.com"]).verify is False
         assert ap.parse_args(["--target", "a.com", "--verify"]).verify is True
 
+    def test_no_targets_exits_2(self):
+        from w4f.cli import main
+        assert main([]) == 2
+
 
 def pytest_raises_systemexit():
     import pytest
