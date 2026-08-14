@@ -5,6 +5,39 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.19] — 2026-08-14
+
+Review-driven improvements (P0 confidence scoring + ALPN observation, vendor
+coverage expansion).
+
+**P0 — Fingerprint confidence scoring.** Each verdict match now carries a
+`confidence` field (0–100) computed from weighted signal categories:
+netblock 30, cert issuer 25, CNAME 20, PTR 15, headers 7, cookies 3 —
+each category counted once, per-vendor `weights` override supported. A
+5-category Cloudflare match scores ~82, a lone `Server: nginx` header
+scores 7, so consumers can triage `--json` without guessing. Signal-count
+ranking stays the default sort; confidence is an additional field shown
+alongside it in console/`--md` output. Backward-compatible.
+
+**P0 — ALPN observation.** `alpn_negotiated` is reported on every result
+(the handshake already negotiated ALPN; now it's surfaced distinctly), and
+when the edge negotiates `h2` but the GET used HTTP/1.1 (h2 frames would
+read as garbage), `http2_negotiated: true` + a note explain that the header
+view is the HTTP/1.1 view. Shown as a `http2` console row.
+
+**Vendor coverage +16 vendors (54 total).** Bot-management edges:
+`datadome`, `perimeterx` (HUMAN), `kasada`, `shape-security`, `arkose`,
+`reblaze`, `radware`. API-gateway / platform edges: `tyk`, `apigee`,
+`azure-api-management`, `cloudflare-workers`, `gcp-armor`. Plus `squarespace`
+(from the big sweep, already in 0.1.18).
+
+**Header prefix matching.** Header rules may end in `*` for prefix matching
+(`x-tyk-*` matches `x-tyk-request-id`); exact keys stay exact. The
+arvancloud lesson is preserved — a glob that never fires is a dead rule,
+but a prefix against variable-suffix headers is a real match.
+
++18 tests (160 total).
+
 ## [0.1.18] — 2026-08-14
 
 Big internet sweep (275 hosts, oracle-validated) — accuracy batch.

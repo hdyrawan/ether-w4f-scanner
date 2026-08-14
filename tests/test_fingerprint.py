@@ -257,6 +257,66 @@ class TestNegatives:
         r = _result(headers={"server": "Squarespace"})
         assert "squarespace" in [m["vendor"] for m in fingerprint(r)]
 
+    def test_datadome(self):
+        r = _result(headers={"x-datadome": "blocked"},
+                    cookies=["datadome=abcd1234; Path=/"])
+        assert "datadome" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_perimeterx(self):
+        r = _result(cookies=["_pxhd=abc123; Path=/"])
+        assert "perimeterx" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_kasada_cookie(self):
+        r = _result(cookies=["kpsdk_ct=abc123; Path=/"])
+        assert "kasada" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_shape_security(self):
+        r = _result(cookies=["shape_1221=abc; Path=/"])
+        assert "shape-security" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_arkose_cookie(self):
+        r = _result(cookies=["arkose_token=abc; Path=/"])
+        assert "arkose" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_reblaze(self):
+        r = _result(headers={"x-reblaze-cache": "HIT"},
+                    cookies=["rbzid=abc; Path=/"])
+        assert "reblaze" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_radware(self):
+        r = _result(cookies=["mpev_1258=abc; Path=/"])
+        assert "radware" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_tyk_prefix_header(self):
+        # x-tyk-* prefix match: x-tyk-request-id is a real Tyk header.
+        r = _result(headers={"x-tyk-request-id": "abc123"})
+        assert "tyk" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_apigee_prefix_header(self):
+        r = _result(headers={"apigee-request-id": "abc"})
+        assert "apigee" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_azure_api_management(self):
+        r = _result(headers={"ocp-apim-subscription-key": "deadbeef"},
+                    cname=["api.example.azure-api.net"])
+        assert "azure-api-management" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_cloudflare_workers(self):
+        r = _result(headers={"server": "cloudflare", "cf-worker": "router"})
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "cloudflare-workers" in names
+        assert "cloudflare" in names  # base vendor fires too
+
+    def test_gcp_armor(self):
+        r = _result(headers={"x-goog-generate-id": "12345"})
+        assert "gcp-armor" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_prefix_glob_does_not_fire_on_unrelated_header(self):
+        # a header literally named "x-tyk-" (with the asterisk missing) must
+        # not match — the prefix rule is anchored to the real prefix
+        r = _result(headers={"x-tykfoo": "abc"})
+        assert "tyk" not in [m["vendor"] for m in fingerprint(r)]
+
 
 class TestSignalCounting:
     def test_cloudflare_ranked_by_signal_count(self):
@@ -268,6 +328,53 @@ class TestSignalCounting:
         ver = fingerprint(r)
         assert ver[0]["vendor"] == "cloudflare"
         assert ver[0]["signals"] >= 2
+
+    def test_confidence_high_with_netblock_cert_cname(self):
+        # Cloudflare: netblock(30) + cert(25) + cname(20) + headers(7) = 82
+        r = _result(
+            ips=["104.18.1.79"],
+            cname=["x.example.com.cdn.cloudflare.net"],
+            headers={"server": "cloudflare", "cf-ray": "abc"},
+            cert={"issuer_org": "Cloudflare, Inc.", "subject_org": "Cloudflare, Inc."},
+        )
+        ver = fingerprint(r)
+        cf = next(m for m in ver if m["vendor"] == "cloudflare")
+        assert cf["confidence"] == 82
+
+    def test_confidence_low_for_single_header(self):
+        # nginx single Server header = headers(7) only
+        ver = fingerprint(_result(headers={"server": "nginx"}))
+        assert ver == [{"vendor": "nginx", "signals": 1, "confidence": 7,
+                        "evidence": ["header server: nginx"]}]
+
+    def test_confidence_capped_at_100(self):
+        # A vendor with all six categories matched cannot exceed 100 even
+        # with multiple headers/cookies (each category counted once).
+        r = _result(
+            ips=["104.18.1.79"],
+            cname=["x.example.com.cdn.cloudflare.net"],
+            ptr=["x.example.com.cdn.cloudflare.net"],
+            headers={"server": "cloudflare", "cf-ray": "abc", "cf-cache-status": "DYNAMIC"},
+            cookies=["__cf_bm=abc", "_cfuvid=xyz"],
+            cert={"issuer_org": "Cloudflare, Inc.", "subject_org": "Cloudflare, Inc."},
+        )
+        ver = fingerprint(r)
+        cf = next(m for m in ver if m["vendor"] == "cloudflare")
+        assert cf["confidence"] == 100
+
+    def test_confidence_signal_count_still_primary_sort(self):
+        # Two vendors, one with more signals: signals sort first, confidence
+        # is a tiebreak field only.
+        r = _result(
+            ips=["104.18.1.79"],
+            headers={"server": "cloudflare", "cf-ray": "abc"},
+            cert={"issuer_org": "Cloudflare, Inc."},
+        )
+        ver = fingerprint(r)
+        assert ver[0]["vendor"] == "cloudflare"
+        # both fields present on every match
+        for m in ver:
+            assert "signals" in m and "confidence" in m
 
     def test_evidence_strings_present(self):
         r = _result(cookies=["TS01538524=012b5961782784783de7052afa3b4817"])

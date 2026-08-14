@@ -29,7 +29,9 @@ def _row(label: str, value: str) -> str:
 def fmt_verdict(verdict: list[dict]) -> str:
     if not verdict:
         return "unknown-edge (no signature matched)"
-    return ", ".join(f"{m['vendor']}({m['signals']})" for m in verdict)
+    return ", ".join(
+        f"{m['vendor']}({m['signals']}, {m.get('confidence', 0)}%)" for m in verdict
+    )
 
 
 def _verdict_line(ver: list[dict]) -> str:
@@ -39,7 +41,7 @@ def _verdict_line(ver: list[dict]) -> str:
     parts = []
     for m in ver:
         ev = "; ".join(m["evidence"])
-        parts.append(f"{_GREEN}{m['vendor']}{_RESET} {_DIM}({m['signals']}){_RESET}: {ev}")
+        parts.append(f"{_GREEN}{m['vendor']}{_RESET} {_DIM}({m['signals']}, {m.get('confidence', 0)}%){_RESET}: {ev}")
     return _row("verdict", "  |  ".join(parts))
 
 
@@ -67,6 +69,8 @@ def fmt_block(r: dict) -> str:
             f"  ALPN {tls.get('alpn') or '-'}",
         )
     )
+    if r.get("http2_negotiated"):
+        lines.append(_row("  http2", _YELLOW + "negotiated h2; GET used HTTP/1.1 (header view is the 1.1 view)" + _RESET))
     if tls.get("mtls"):
         lines.append(_row("mtls", _RED + "server wants a CLIENT certificate" + _RESET))
     if cert.get("subject"):

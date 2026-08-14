@@ -367,6 +367,18 @@ def http_get(host: str, port: int, path: str, timeout: float,
     return result
 
 
+# Confidence weights per signal category (0-100 total). These are the
+# default; a vendor rule can override with its own "weights" dict.
+CONF_WEIGHTS = {
+    "netblock": 30,  # IP ownership is hard to spoof
+    "cert": 25,      # cert issuance is authoritative
+    "cname": 20,     # DNS delegation is intentional
+    "ptr": 15,       # can be generic or missing
+    "headers": 7,    # weak alone — anyone can set a header
+    "cookies": 3,    # weakest — easily fabricated
+}
+
+
 def fingerprint(result: dict) -> list[dict]:
     """Ranked vendor matches with the signals that matched.
 
@@ -399,38 +411,60 @@ def fingerprint(result: dict) -> list[dict]:
     matches = []
     for name, rules in VENDORS.items():
         evidence = []
+        cats: set[str] = set()
         for hname, hre in rules.get("headers", {}).items():
-            val = headers.get(hname)
-            if val is None:
-                continue
-            if hre is None or re.search(hre, val, re.I):
-                evidence.append(f"header {hname}: {val[:60]}")
+            # A trailing "*" is a PREFIX match against any header name:
+            # "x-tyk-*" matches x-tyk-request-id, x-tyk-api-key, ... Exact
+            # keys stay exact (arvancloud lesson: a glob never fires against
+            # the exact lookup — but a prefix is a real, useful match).
+            if hname.endswith("*"):
+                prefix = hname[:-1].lower()
+                for hk, hv in headers.items():
+                    if hk.lower().startswith(prefix) and (
+                            hre is None or re.search(hre, hv, re.I)):
+                        evidence.append(f"header {hk}: {hv[:60]}")
+                        cats.add("headers")
+            else:
+                val = headers.get(hname)
+                if val is None:
+                    continue
+                if hre is None or re.search(hre, val, re.I):
+                    evidence.append(f"header {hname}: {val[:60]}")
+                    cats.add("headers")
         for cre in rules.get("cookies", []):
             for cval in set_cookies:
                 if re.search(cre, cval):
                     evidence.append(f"cookie: {cval[:60]}")
+                    cats.add("cookies")
         cre = rules.get("cert")
         if cre and re.search(cre, cert_text):
             evidence.append(f"cert: {cert.get('issuer_org') or cert.get('issuer')}")
+            cats.add("cert")
         cname_re = rules.get("cname")
         if cname_re and re.search(cname_re, cnames):
             first = (result.get("cname") or [""])[0]
             evidence.append(f"cname: {first}")
+            cats.add("cname")
         ptr_re = rules.get("ptr")
         if ptr_re and re.search(ptr_re, ptrs):
             first = (result.get("ptr") or [""])[0]
             evidence.append(f"ptr: {first}")
+            cats.add("ptr")
         for net in vendor_nets(name):
             for ip in ips:
                 try:
                     if ipaddress.ip_address(ip) in net:
                         evidence.append(f"netblock: {ip} in {net}")
+                        cats.add("netblock")
                         break
                 except ValueError:
                     pass
         if evidence and _required_signals_ok(rules, headers, set_cookies,
                                              cert_text, cnames, ptrs, ips):
-            matches.append({"vendor": name, "signals": len(evidence), "evidence": evidence})
+            weights = {**CONF_WEIGHTS, **(rules.get("weights") or {})}
+            conf = sum(weights.get(c, 0) for c in cats)
+            matches.append({"vendor": name, "signals": len(evidence),
+                            "confidence": min(conf, 100), "evidence": evidence})
 
     matches.sort(key=lambda m: -m["signals"])
     return matches
@@ -661,6 +695,18 @@ def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
             return result
         tls = tls_probe(host, port, path, timeout, do_http)
         result["tls"] = tls
+        # ALPN observation: the TLS handshake advertises h2+http/1.1 but the
+        # GET is sent over a separate http/1.1-only connection (h2 frames
+        # would read as garbage). Report the negotiated ALPN distinctly and
+        # flag when the edge chose h2 — its HTTP/2 behavior (headers,
+        # challenge pages) is NOT what the fingerprint saw, so consumers know
+        # the header view is the http/1.1 view.
+        negotiated = tls.get("alpn")
+        result["alpn_negotiated"] = negotiated
+        if do_http and negotiated == "h2":
+            result["http2_negotiated"] = True
+            result["note"] = ("edge negotiated HTTP/2 but the GET used "
+                              "HTTP/1.1 — header view may differ under h2")
         # fold cert-level fields up for convenience (and for fingerprint())
         cert = tls.get("cert")
         if cert:

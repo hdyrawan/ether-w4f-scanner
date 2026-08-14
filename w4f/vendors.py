@@ -376,6 +376,61 @@ VENDORS: dict[str, dict] = {
         "headers": {"server": r"safedog"},
         "cookies": [r"^safedog-flow-item="],
     },
+    "datadome": {
+        # Bot-management JS challenge: datadome cookie + x-datadome header.
+        "headers": {"x-datadome": None, "server": r"datadome"},
+        "cookies": [r"^datadome="],
+    },
+    "perimeterx": {
+        # HUMAN / PerimeterX bot management: _px* cookies.
+        "headers": {"x-px-*": None, "server": r"perimeterx"},
+        "cookies": [r"^_px\d*=", r"^_pxhd=", r"^_px3="],
+    },
+    "kasada": {
+        # Kasada bot defense: kpsdk* cookies + x-kpsdk-ct header.
+        "headers": {"x-kpsdk-ct": None, "x-kasada-*": None},
+        "cookies": [r"^kpsdk_ct=", r"^kpsdk=", r"^kpsdkutm="],
+    },
+    "shape-security": {
+        # Shape Security (F5) bot defense: shape_* cookies + x-shape header.
+        "headers": {"x-shape-*": None, "server": r"shape"},
+        "cookies": [r"^shape_", r"^__shape"],
+    },
+    "arkose": {
+        # Arkose Labs (now part of Fortinet) bot/liveness: arkose* cookies.
+        "cookies": [r"^arkose", r"^_arkose"],
+    },
+    "reblaze": {
+        # Reblaze WAF: x-reblaze-* headers + rbzid cookie.
+        "headers": {"x-reblaze-*": None, "server": r"reblaze"},
+        "cookies": [r"^rbzid="],
+    },
+    "radware": {
+        # Radware WAF/AppWall: mpev_* cookies + x-radware headers.
+        "headers": {"x-radware-*": None, "server": r"radware|appwall"},
+        "cookies": [r"^mpev_"],
+    },
+    "tyk": {
+        # Tyk API gateway: x-tyk-* headers (api key / request id / trace).
+        "headers": {"x-tyk-*": None},
+    },
+    "apigee": {
+        # Google Apigee API gateway: apigee-* headers.
+        "headers": {"apigee-*": None, "x-apigee-*": None},
+    },
+    "azure-api-management": {
+        # Azure API Management: ocp-apim-* headers + azure-api.net host.
+        "headers": {"ocp-apim-*": None},
+        "cname": r"azure-api\\.net",
+    },
+    "cloudflare-workers": {
+        # Cloudflare Workers / Pages: cf-worker header on responses.
+        "headers": {"cf-worker": None},
+    },
+    "gcp-armor": {
+        # Google Cloud Armor: x-goog-* headers on 4xx/5xx from the edge.
+        "headers": {"x-goog-*": None, "server": r"gcloud|gfe.*armor"},
+    },
 }
 
 # Header names that are interesting to SHOW even when they don't match a vendor.
