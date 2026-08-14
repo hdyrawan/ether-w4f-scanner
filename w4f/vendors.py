@@ -107,7 +107,11 @@ VENDORS: dict[str, dict] = {
         "headers": {"server": r"microsoft-azure-application-gateway"},
     },
     "google-gfe": {
-        "headers": {"server": r"gws|gfe|esf", "alt-svc": r"h3"},
+        # Do NOT key on `alt-svc: h3` — HTTP/3 advertisement is web-wide
+        # (Cloudflare, Fastly, nginx+quic all send it) and mislabels any
+        # HTTP/3 host as GFE. The Server token and the 1e100.net PTR are
+        # the Google-specific signals.
+        "headers": {"server": r"gws|gfe|esf"},
         "cert": r"google trust services",
         "ptr": r"1e100\.net|googleusercontent\.com",
     },
@@ -170,7 +174,10 @@ VENDORS: dict[str, dict] = {
         "cookies": [r"^cachewall"],
     },
     "arvancloud": {
-        "headers": {"server": r"arvancloud", "x-arvan-*": None},
+        # Header keys are matched by EXACT lookup, not glob, so a wildcard
+        # key like "x-arvan-*" never fires. Use the concrete header
+        # ArvanCloud actually sends (x-arvan-request-id).
+        "headers": {"server": r"arvancloud", "x-arvan-request-id": None},
         "cname": r"arvan",
         "ptr": r"arvan",
     },
