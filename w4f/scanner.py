@@ -428,11 +428,70 @@ def fingerprint(result: dict) -> list[dict]:
                         break
                 except ValueError:
                     pass
-        if evidence:
+        if evidence and _required_signals_ok(rules, headers, set_cookies,
+                                             cert_text, cnames, ptrs, ips):
             matches.append({"vendor": name, "signals": len(evidence), "evidence": evidence})
 
     matches.sort(key=lambda m: -m["signals"])
     return matches
+
+
+def _required_signals_ok(rules: dict, headers: dict, set_cookies: list,
+                         cert_text: str, cnames: str, ptrs: str, ips: list) -> bool:
+    """AND/OR-gate for multi-signal rules via the optional ``requires`` field.
+
+    The base fingerprint loop ORs every signal kind within a vendor — a
+    single matching header is enough to fire. That is right for most vendors
+    but dangerously loose for composite rules (e.g. aws-waf must not fire on
+    *any* 403; it needs an AWS-specific marker too).
+
+    ``requires`` is a list of alternatives; the vendor fires if ANY one of
+    them is satisfied (OR across alternatives). Each alternative is either a
+    single signal spec, or a list of specs that must ALL match (AND within
+    a list):
+
+        {"requires": [
+            # alternative 1: CloudFront+WAF shape — both must match
+            [{"kind": "header", "name": "_status", "re": r"403"},
+             {"kind": "header", "name": "x-cache", "re": r"error from cloudfront"}],
+            # alternative 2: ALB/API-GW shape — x-amz-id presence is enough
+            {"kind": "header", "name": "x-amz-id"},
+        ]}
+
+    Supported kinds: header, cookie, cert, cname, ptr, netblock.
+    """
+    reqs = rules.get("requires")
+    if not reqs:
+        return True
+
+    def _spec_ok(spec: dict) -> bool:
+        kind = spec["kind"]
+        if kind == "header":
+            val = headers.get(spec["name"])
+            if val is None:
+                return False
+            return not spec.get("re") or bool(re.search(spec["re"], val, re.I))
+        if kind == "cookie":
+            return any(re.search(spec["re"], c) for c in set_cookies)
+        if kind == "cert":
+            return bool(re.search(spec["re"], cert_text))
+        if kind == "cname":
+            return bool(re.search(spec["re"], cnames))
+        if kind == "ptr":
+            return bool(re.search(spec["re"], ptrs))
+        if kind == "netblock":
+            nets = [ipaddress.ip_network(n) for n in spec["nets"]]
+            return any(ipaddress.ip_address(ip) in nets for ip in ips)
+        return False
+
+    for alt in reqs:
+        if isinstance(alt, list):
+            if all(_spec_ok(s) for s in alt):
+                return True
+        else:
+            if _spec_ok(alt):
+                return True
+    return False
 
 
 def parse_http_response(data: bytes) -> dict:

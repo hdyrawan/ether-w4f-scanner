@@ -5,6 +5,39 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.18] — 2026-08-14
+
+Big internet sweep (275 hosts, oracle-validated) — accuracy batch.
+
+**New mechanism: `requires` (AND/OR gate for composite rules).** The
+fingerprint loop previously OR'd every signal kind within a vendor, so a
+single matching signal could fire a composite rule. `requires` adds an
+optional gate: a list of alternatives (OR across), each a single spec or a
+list that must ALL match (AND within). Used to fix:
+- **aws-waf no longer fires on any bare 403** — the CloudFront+WAF shape
+  needs 403 AND `x-cache: error from cloudfront`; the ALB shape needs an
+  x-amz-* marker. A Cloudflare challenge 403 (berkeley.edu) was claiming
+  aws-waf before.
+- **google-gfe no longer phantoms on GTS-issued certs** — Cloudflare (and
+  many others) now use Google Trust Services CAs, so a GTS issuer alone
+  claimed google-gfe on every Cloudflare host (58 noisy co-matches →
+  2, both real Google-Cloud origins: linkedin, tiket).
+
+**False-positive fixes (found by the sweep):**
+- **fastly `x-served-by` requires a cache node** (`cache-<po>`) — mere
+  presence matched Cloudflare's own `x-served-by: marketing-site` and
+  claimed fastly on cloudflare.com.
+
+**New vendor:** `squarespace` (managed platform edge, `server:
+Squarespace`) — the oracle named it, w4f was UNKNOWN.
+
+**Accuracy vs oracle (254 reached hosts): 150 agree / 68 w4f-better / 11
+disagree / 25 blank, 0 w4f errors = 94% correct-or-better.** All 11
+remaining disagreements are oracle false positives (Envoy on Akamai hosts,
+Shadow Daemon on plain Apache, GCP App Armor on Wix's Pepyaka) or
+semantic layers (CloudFront vs AWS-ELB on AWS-family hosts) — no real w4f
+gaps. +11 tests (142 total).
+
 ## [0.1.17] — 2026-08-14
 
 Security-review batch (5 findings).

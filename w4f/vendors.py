@@ -91,13 +91,24 @@ VENDORS: dict[str, dict] = {
     "aws-waf": {
         # Two shapes: (1) ALB/API-GW WAF headers (x-amz-* / x-blocked-by-waf),
         # (2) CloudFront + AWS WAF managed rules — the edge answers 403 with
-        # "x-cache: Error from cloudfront" on an attack-shaped request
-        # (a bank's API host, example-hospital.com). The status is exposed as the
-        # pseudo-header _status by fingerprint().
+        # "x-cache: Error from cloudfront" on an attack-shaped request.
+        # The status is exposed as the pseudo-header _status by fingerprint().
+        # requires: a bare 403 (Cloudflare challenge, nginx deny, ...) must
+        # NOT claim aws-waf — at least one AWS-specific marker must co-occur.
         "headers": {"x-amz-id": None, "x-amz-request-id": None,
                     "x-blocked-by-waf": r"awsmanagedrules|blocked_by_custom_response",
                     "_status": r"403", "x-cache": r"^error from cloudfront$"},
         "cookies": [r"^aws\.?alb="],
+        "requires": [
+            # CloudFront + AWS WAF shape: 403 AND the error-from-cloudfront
+            # cache marker must co-occur (a bare 403 is not enough).
+            [{"kind": "header", "name": "_status", "re": r"403"},
+             {"kind": "header", "name": "x-cache", "re": r"error from cloudfront"}],
+            # ALB/API-GW WAF shape: any AWS WAF marker header is enough.
+            {"kind": "header", "name": "x-amz-id"},
+            {"kind": "header", "name": "x-amz-request-id"},
+            {"kind": "header", "name": "x-blocked-by-waf"},
+        ],
     },
     "aws-elb": {
         "headers": {"server": r"awselb/2\.0"},
@@ -123,7 +134,10 @@ VENDORS: dict[str, dict] = {
         "ptr": r"compute-\d+\.amazonaws\.com",
     },
     "fastly": {
-        "headers": {"server": r"fastly", "x-served-by": None, "x-timer": None,
+        # x-served-by must look like a Fastly cache node (cache-<po>) — mere
+        # presence is not enough: Cloudflare's own marketing site sends
+        # "x-served-by: marketing-site" and would phantom fastly.
+        "headers": {"server": r"fastly", "x-served-by": r"cache-", "x-timer": None,
                     "x-fastly-request-id": None, "via": r"fastly"},
         "cert": r"fastly",
         "cname": r"fastly\.net|fastlylb\.net",
@@ -162,10 +176,17 @@ VENDORS: dict[str, dict] = {
         # Do NOT key on `alt-svc: h3` — HTTP/3 advertisement is web-wide
         # (Cloudflare, Fastly, nginx+quic all send it) and mislabels any
         # HTTP/3 host as GFE. The Server token and the 1e100.net PTR are
-        # the Google-specific signals.
+        # the Google-specific signals. The GTS issuer cert is NOT sufficient
+        # on its own — Google Trust Services now issues certs for Cloudflare
+        # and many other non-Google hosts, so a GTS cert alone would phantom
+        # google-gfe everywhere.
         "headers": {"server": r"gws|gfe|esf"},
         "cert": r"google trust services",
         "ptr": r"1e100\.net|googleusercontent\.com",
+        "requires": [
+            {"kind": "header", "name": "server", "re": r"gws|gfe|esf"},
+            {"kind": "ptr", "re": r"1e100\.net|googleusercontent\.com"},
+        ],
     },
     "f5": {
         "headers": {"server": r"bigip|big-ip", "x-wa-info": None, "x-cnection": None},
@@ -229,6 +250,12 @@ VENDORS: dict[str, dict] = {
         # Wix's own edge (Fastly-backed): server Pepyaka + x-cache-status.
         "headers": {"server": r"pepyaka", "x-cache-status": None},
         "cname": r"wix\.com|fastly",
+    },
+    "squarespace": {
+        # Squarespace managed platform edge: serves `server: Squarespace`
+        # on every response (concrete header — exact match, no glob).
+        "headers": {"server": r"squarespace"},
+        "cname": r"squarespace\.com|squarespace\.",
     },
     "azure-app-service": {
         # Azure App Service / App Gateway family: ARRAffinity cookie + azurewebsites.

@@ -172,6 +172,91 @@ class TestNegatives:
         # fingerprint() must tolerate a result with no TLS/http at all
         assert fingerprint({"ips": [], "cname": [], "ptr": [], "cert": {}}) == []
 
+    def test_bare_403_not_aws_waf(self):
+        # A 403 with no AWS marker (Cloudflare challenge, nginx deny) must
+        # NOT claim aws-waf — the requires gate needs an AWS-specific marker.
+        r = _result(headers={"server": "nginx", "_status": "403"})
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "aws-waf" not in names
+        assert "nginx" in names
+
+    def test_403_with_cloudfront_cache_is_aws_waf(self):
+        # CloudFront + AWS WAF shape: 403 AND x-cache error-from-cloudfront.
+        r = _result(headers={"server": "CloudFront", "_status": "403",
+                             "x-cache": "Error from cloudfront"})
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "aws-waf" in names
+
+    def test_cloudflare_challenge_403_not_aws_waf(self):
+        # berkeley.edu case from the big sweep: cf-mitigated challenge + 403
+        # is Cloudflare, not AWS.
+        r = _result(
+            headers={"server": "cloudflare", "cf-mitigated": "challenge", "_status": "403"},
+            cookies=["__cf_bm=abc"],
+        )
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "aws-waf" not in names
+        assert "cloudflare" in names
+
+    def test_gts_cert_alone_not_google_gfe(self):
+        # Cloudflare hosts use Google Trust Services certs — a GTS issuer
+        # alone must NOT phantom google-gfe (requires server/PTR gate).
+        r = _result(
+            ips=["104.16.1.1"],
+            headers={"server": "cloudflare", "cf-ray": "abc"},
+            cert={"issuer_org": "Google Trust Services", "subject_org": "Cloudflare, Inc."},
+        )
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "google-gfe" not in names
+        assert "cloudflare" in names
+
+    def test_gfe_server_header_is_google(self):
+        # Server: gws is the decisive google-gfe signal even with a GTS cert.
+        r = _result(
+            ips=["34.36.226.141"],
+            headers={"server": "gws"},
+            cert={"issuer_org": "Google Trust Services"},
+        )
+        assert "google-gfe" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_gfe_ptr_is_google_origin(self):
+        # A Google Cloud origin PTR behind a Cloudflare edge is a REAL
+        # multi-layer answer (linkedin/tiket in the big sweep), not noise.
+        r = _result(
+            ips=["14.32.211.130"],
+            ptr=["14.32.211.130.bc.googleusercontent.com"],
+            headers={"server": "cloudflare", "cf-ray": "abc"},
+        )
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "cloudflare" in names
+        assert "google-gfe" in names
+
+    def test_x_served_by_marketing_site_not_fastly(self):
+        # cloudflare.com case from the big sweep: "x-served-by:
+        # marketing-site" is Cloudflare's own marker, not Fastly.
+        r = _result(
+            ips=["104.16.133.229"],
+            headers={"server": "cloudflare", "cf-ray": "abc",
+                     "x-served-by": "marketing-site"},
+        )
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "fastly" not in names
+        assert "cloudflare" in names
+
+    def test_x_served_by_cache_node_is_fastly(self):
+        # Real Fastly cache node naming (x-served-by: cache-<po>).
+        r = _result(
+            ips=["151.101.0.81"],
+            headers={"x-served-by": "cache-sin-wsap440094-SIN",
+                     "x-timer": "S1786724063.140005,VS0,VE4"},
+        )
+        assert "fastly" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_squarespace_platform(self):
+        # Squarespace managed platform serves `server: Squarespace`.
+        r = _result(headers={"server": "Squarespace"})
+        assert "squarespace" in [m["vendor"] for m in fingerprint(r)]
+
 
 class TestSignalCounting:
     def test_cloudflare_ranked_by_signal_count(self):
