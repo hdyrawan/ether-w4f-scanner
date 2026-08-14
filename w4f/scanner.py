@@ -465,7 +465,7 @@ def match_block_page(title: str, head_text: str, body_text: str, status: str) ->
         return {"vendor": "imperva", "title": title, "status": status}
     # AWS CloudFront + AWS WAF: "ERROR: The request could not be satisfied"
     # with "Request blocked" — the WAF managed-rule 403 (XSS/SQLi rules on
-    # the edge). Same signature on bank-example.co.id and example-hospital.com.
+    # the edge). Same signature on a bank's API host and example-hospital.com.
     if ("the request could not be satisfied" in t or "request blocked" in body_text) \
             and ("cloudfront" in body_text or "amazon" in body_text):
         return {"vendor": "aws-waf", "title": title, "status": status}

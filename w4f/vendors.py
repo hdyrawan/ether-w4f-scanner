@@ -78,7 +78,7 @@ VENDORS: dict[str, dict] = {
         # Two shapes: (1) ALB/API-GW WAF headers (x-amz-* / x-blocked-by-waf),
         # (2) CloudFront + AWS WAF managed rules — the edge answers 403 with
         # "x-cache: Error from cloudfront" on an attack-shaped request
-        # (bank-example.co.id, example-hospital.com). The status is exposed as the
+        # (a bank's API host, example-hospital.com). The status is exposed as the
         # pseudo-header _status by fingerprint().
         "headers": {"x-amz-id": None, "x-amz-request-id": None,
                     "x-blocked-by-waf": r"awsmanagedrules|blocked_by_custom_response",
@@ -93,9 +93,9 @@ VENDORS: dict[str, dict] = {
     "aws-global-accelerator": {
         # AWS Global Accelerator (GLOBALACCELERATOR ranges from
         # ip-ranges.amazonaws.com). Serves an AWS edge without the
-        # elb.amazonaws.com CNAME; e.g. bank-example.com resolves to
-        # 15.197.x / 3.33.x, PTR *.awsglobalaccelerator.com, and 301s
-        # to corporate-portal.example.com from ip-*.eu-west-2.compute.internal.
+        # elb.amazonaws.com CNAME; found on a corporate website that
+        # resolves to 15.197.x / 3.33.x, PTR *.awsglobalaccelerator.com,
+        # and 301s to its portal from ip-*.eu-west-2.compute.internal.
         "nets": ["15.197.0.0/16", "3.33.0.0/16"],
         "ptr": r"awsglobalaccelerator\.com",
     },
@@ -118,7 +118,7 @@ VENDORS: dict[str, dict] = {
     },
     "azure-frontdoor": {
         # CONFIG_NOCACHE x-cache value is Front Door's own cache config
-        # marker (seen on EXAMPLE_BANK's Atlassian intranet hosts with no
+        # marker (seen on corporate Atlassian intranet hosts with no
         # x-azure-ref and a hidden server header).
         "headers": {"x-azure-ref": None, "server": r"azure-frontdoor|frontdoor",
                     "x-cache": r"CONFIG_NOCACHE|CONFIG_CACHE"},
@@ -129,8 +129,8 @@ VENDORS: dict[str, dict] = {
         "headers": {"server": r"microsoft-azure-application-gateway"},
     },
     "sgw": {
-        # Shopee/Sea Group API gateway — EXAMPLE_BANK's UAT/staging hosts serve
-        # `Server: SGW` (apm-uat1.uat.bank-example.co.id, notice.staging.bank-example.co.id, ...).
+        # Shopee/Sea Group API gateway — bank UAT/staging hosts serve
+        # `Server: SGW` (apm-uat1, notice.staging, ...).
         "headers": {"server": r"^SGW(?:/|$)"},
     },
     "iis": {

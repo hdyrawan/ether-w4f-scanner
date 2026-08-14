@@ -11,10 +11,10 @@ Rules mined from the Indonesian bank subdomain sweep's 489-host UNKNOWN
 bucket. Verified live against the hosts that exposed them.
 
 - **`azure-frontdoor`** now also fires on `x-cache: CONFIG_NOCACHE` /
-  `CONFIG_CACHE` — Front Door's cache-config marker, served by EXAMPLE_BANK's
-  Atlassian intranet hosts (bitbucket/confluence/eproject) with a hidden
+  `CONFIG_CACHE` — Front Door's cache-config marker, served by some
+  corporate Atlassian intranet hosts with a hidden
   server header and no `x-azure-ref`. Confirmed against Microsoft docs.
-- **`sgw`** — `Server: SGW` = Shopee/Sea Group API gateway; EXAMPLE_BANK
+- **`sgw`** — `Server: SGW` = Shopee/Sea Group API gateway; bank
   UAT/staging hosts (apm-uat1, notice.staging, ...).
 - **`iis`** — plain Microsoft IIS / HTTPAPI origin (mail/webmail/
   autodiscover hosts); naming a bare origin beats "unknown".

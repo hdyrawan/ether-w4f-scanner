@@ -49,7 +49,7 @@ class TestRealWorldPositives:
         names = [m["vendor"] for m in fingerprint(r)]
         assert "tencent-edgeone" in names
 
-    def test_f5_ts_cookie_EXAMPLE_BANK(self):
+    def test_f5_ts_cookie_origin(self):
         r = _result(
             ips=["103.124.20.98"],
             cookies=["TS01538524=012b5961782784783de7052afa3b4817"],
@@ -58,31 +58,31 @@ class TestRealWorldPositives:
         assert "f5" in names
 
     def test_f5_ten_char_ts_cookie(self):
-        # 10-hex TS cookie (TSa0cfc1c5027=... form) on bank-example.co.id
+        # 10-hex TS cookie (TSa0cfc1c5027=... form)
         r = _result(cookies=["TSa0cfc1c5027=01e96070f81cbbfff2708a024b425393"])
         assert "f5" in [m["vendor"] for m in fingerprint(r)]
 
-    def test_haproxy_stick_cookie_brks(self):
+    def test_haproxy_stick_cookie(self):
         # brks_lb=!<base64> — HAProxy stick cookie, no Server header
         r = _result(cookies=["brks_lb=!igBUmMgdR05NSpvPC/3/vdfhxhkcRNC4Auqj6+Ndiy5+"])
         assert "haproxy" in [m["vendor"] for m in fingerprint(r)]
 
-    def test_gtm_gslb_mnc(self):
+    def test_gtm_gslb_cname(self):
         r = _result(cname=["gtm-sg-wzf24ud291z.gtm-i1d6.com"])
         assert "gtm-gslb" in [m["vendor"] for m in fingerprint(r)]
 
-    def test_aws_ec2_example(self):
+    def test_aws_ec2_ptr(self):
         r = _result(ips=["34.206.8.44"], ptr=["ec2-34-206-8-44.compute-1.amazonaws.com"])
         assert "aws-ec2" in [m["vendor"] for m in fingerprint(r)]
 
-    def test_aws_elb_EXAMPLE_BANK(self):
+    def test_aws_elb_cname(self):
         r = _result(
             ips=["15.232.9.89"],
             cname=["internal-abc-1234567890.ap-southeast-3.elb.amazonaws.com"],
         )
         assert "aws-elb" in [m["vendor"] for m in fingerprint(r)]
 
-    def test_imperva_EXAMPLE_BANK(self):
+    def test_imperva_incap(self):
         r = _result(
             ips=["45.60.16.239"],
             cname=["wj5u3uw.ng.impervadns.net"],
@@ -90,14 +90,14 @@ class TestRealWorldPositives:
         )
         assert "imperva" in [m["vendor"] for m in fingerprint(r)]
 
-    def test_google_gfe_EXAMPLE_BANK(self):
+    def test_google_gfe_gws(self):
         r = _result(
             ips=["34.36.226.141"],
             headers={"server": "gws", "alt-svc": "h3=\":443\""},
         )
         assert "google-gfe" in [m["vendor"] for m in fingerprint(r)]
 
-    def test_nginx_direct_ccbi(self):
+    def test_nginx_direct_origin(self):
         r = _result(ips=["117.54.11.167"], headers={"server": "nginx/1.24.0"})
         names = [m["vendor"] for m in fingerprint(r)]
         assert "nginx" in names

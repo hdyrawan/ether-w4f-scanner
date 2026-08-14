@@ -85,7 +85,8 @@ class TestMatchOther:
 
     def test_aws_waf_block_page(self):
         # CloudFront + AWS WAF block page: "ERROR: The request could not be
-        # satisfied" / "Request blocked" (bank-example.co.id, example-hospital.com)
+        # satisfied" / "Request blocked" (seen on a bank's API host,
+        # example-hospital.com)
         body = ("<html><head><title>ERROR: The request could not be satisfied"
                 "</title></head><body>Request blocked. We can't connect to "
                 "the server for this app or website at this time. There might "

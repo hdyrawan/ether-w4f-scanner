@@ -139,7 +139,7 @@ class TestNewSignatures:
         assert "kong" in self._names(headers={"server": "kong/3.4.1"})
 
     def test_aws_global_accelerator(self):
-        # bank-example.com resolves to AWS Global Accelerator ranges
+        # resolves to AWS Global Accelerator ranges
         # (15.197.x / 3.33.x) with no elb.amazonaws.com CNAME.
         assert "aws-global-accelerator" in self._names(
             ips=["15.197.225.128", "3.33.251.168"])
@@ -147,7 +147,7 @@ class TestNewSignatures:
         assert "aws-global-accelerator" not in self._names(ips=["8.8.8.8"])
 
     def test_azure_frontdoor_config_nocache(self):
-        # EXAMPLE_BANK Atlassian intranet hosts: x-cache CONFIG_NOCACHE with
+        # corporate Atlassian intranet hosts: x-cache CONFIG_NOCACHE with
         # hidden server header (Azure Front Door's cache-config marker).
         assert "azure-frontdoor" in self._names(
             headers={"x-cache": "CONFIG_NOCACHE"})
@@ -155,7 +155,7 @@ class TestNewSignatures:
             headers={"x-cache": "CONFIG_CACHE", "x-azure-ref": "ref"})
 
     def test_sgw_shopee_gateway(self):
-        # EXAMPLE_BANK UAT/staging: Server: SGW (Shopee/Sea Group API gateway)
+        # bank UAT/staging: Server: SGW (Shopee/Sea Group API gateway)
         assert "sgw" in self._names(headers={"server": "SGW"})
         assert "sgw" in self._names(headers={"server": "SGW/1.0"})
         assert "sgw" not in self._names(headers={"server": "nginx"})
@@ -173,7 +173,7 @@ class TestNewSignatures:
 
     def test_aws_waf_cloudfront_403(self):
         # CloudFront + AWS WAF managed rules: 403 + x-cache: Error from
-        # cloudfront on an attack-shaped request (bank-example.co.id,
+        # cloudfront on an attack-shaped request (a bank's API host,
         # example-hospital.com). Status is the _status pseudo-header.
         from w4f.scanner import fingerprint
         r = fingerprint({
