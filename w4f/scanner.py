@@ -228,35 +228,44 @@ def http_get(host: str, port: int, path: str, timeout: float) -> dict:
         "Accept: */*\r\n"
         "Connection: close\r\n\r\n"
     )
-    try:
-        sock = socket.create_connection((host, port), timeout=timeout)
-        ctx = ssl.create_default_context()
-        ctx.set_alpn_protocols(["http/1.1"])
-        with ctx.wrap_socket(sock, server_hostname=host) as ts:
-            ts.settimeout(timeout)
-            ts.sendall(req.encode())
-            data = b""
-            while b"\r\n\r\n" not in data and len(data) < 65536:
-                chunk = ts.recv(4096)
-                if not chunk:
-                    break
-                data += chunk
-        head, _, _ = data.partition(b"\r\n\r\n")
-        lines = head.decode("latin-1", "replace").split("\r\n")
-        status = lines[0] if lines else ""
-        headers = {}
-        set_cookie_list = []
-        for line in lines[1:]:
-            if ":" in line:
-                k, v = line.split(":", 1)
-                k, v = k.strip().lower(), v.strip()
-                if k == "set-cookie":
-                    set_cookie_list.append(v)
-                else:
-                    headers[k] = v
-        return {"status": status, "headers": headers, "set-cookie-list": set_cookie_list}
-    except Exception as e:
-        return {"status": f"ERROR: {e}", "headers": {}, "set-cookie-list": []}
+
+    def _once(verify: bool) -> dict:
+        try:
+            sock = socket.create_connection((host, port), timeout=timeout)
+            ctx = ssl.create_default_context() if verify else ssl._create_unverified_context()
+            ctx.set_alpn_protocols(["http/1.1"])
+            with ctx.wrap_socket(sock, server_hostname=host) as ts:
+                ts.settimeout(timeout)
+                ts.sendall(req.encode())
+                data = b""
+                while b"\r\n\r\n" not in data and len(data) < 65536:
+                    chunk = ts.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+            head, _, _ = data.partition(b"\r\n\r\n")
+            lines = head.decode("latin-1", "replace").split("\r\n")
+            status = lines[0] if lines else ""
+            headers = {}
+            set_cookie_list = []
+            for line in lines[1:]:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    k, v = k.strip().lower(), v.strip()
+                    if k == "set-cookie":
+                        set_cookie_list.append(v)
+                    else:
+                        headers[k] = v
+            return {"status": status, "headers": headers, "set-cookie-list": set_cookie_list}
+        except Exception as e:
+            return {"status": f"ERROR: {e}", "headers": {}, "set-cookie-list": []}
+
+    result = _once(verify=True)
+    if result["status"].startswith("ERROR") and "certificate" in result["status"].lower():
+        # Chain not trusted from this client — headers are still fingerprint
+        # evidence (server header, cookies), so retry without validation.
+        result = _once(verify=False)
+    return result
 
 
 def fingerprint(result: dict) -> list[dict]:

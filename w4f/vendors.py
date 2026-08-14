@@ -85,6 +85,11 @@ VENDORS: dict[str, dict] = {
         "headers": {"server": r"amazons3", "x-amz-request-id": None},
         "cname": r"\.s3[.-].*\.amazonaws\.com",
     },
+    "aws-ec2": {
+        # Bare EC2 origin (no managed edge): PTR is ec2-…compute-N.amazonaws.com.
+        # Not a WAF/CDN — but the answer "plain AWS origin, no edge" matters.
+        "ptr": r"compute-\d+\.amazonaws\.com",
+    },
     "fastly": {
         "headers": {"server": r"fastly", "x-served-by": None, "x-timer": None,
                     "x-fastly-request-id": None, "via": r"fastly"},
@@ -119,6 +124,16 @@ VENDORS: dict[str, dict] = {
                     "cneonction": None, "nncoection": None},
         "cookies": [r"^ns_af=", r"^citrix_ns_id", r"^NSC_"],
     },
+    "gtm-gslb": {
+        # DNS-level Global Server Load Balancing CNAME (region-scoped):
+        # `gtm-<region>-<hash>.gtm-i1d6.com`. This is the GTM/GSLB class of
+        # products (F5 BIG-IP DNS / Citrix GTM and similar) — a DNS
+        # load-balancer in front of the origin, NOT a WAF. Observed on
+        # api-external.bank-example.co.id. The vendor behind a given
+        # gtm-*.gtm-*.com zone is not named by the CNAME itself; classify as
+        # the class, not the vendor, unless headers say otherwise.
+        "cname": r"gtm-[a-z0-9-]+\.gtm-i1d6\.com|gtm-[a-z0-9-]+\.gtm-[a-z0-9]+\.(com|net)",
+    },
     "sucuri": {
         "headers": {"server": r"sucuri", "x-sucuri-id": None, "x-sucuri-cache": None},
     },
@@ -139,6 +154,10 @@ VENDORS: dict[str, dict] = {
     },
     "haproxy": {
         "headers": {"server": r"haproxy"},
+        # HAProxy stick-table persistence cookie: `<name>=!<base64>` (the `!`
+        # prefix marks a stick cookie). Observed on mbanking.example.co.id
+        # (`brks_lb=!…`), where no Server header is exposed.
+        "cookies": [r"^[a-zA-Z0-9_.-]+=![A-Za-z0-9+/]+"],
     },
     "caddy": {
         "headers": {"server": r"caddy"},
