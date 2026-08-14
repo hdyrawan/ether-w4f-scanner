@@ -75,6 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="write markdown per-host blocks (for docs) to FILE")
     ap.add_argument("--no-http", action="store_true",
                     help="TLS/cert/DNS only, skip the HTTP request")
+    ap.add_argument("--verify", action="store_true",
+                    help="OPT-IN active probe: send one benign <script> query and "
+                         "report the WAF block page (catches silent WAFs like "
+                         "FortiWeb/F5-ASM that passive scanning cannot see)")
     ap.add_argument("--version", action="version",
                     version=f"%(prog)s {__version__} — {_TAGLINE}")
     ap.add_argument("--quiet", action="store_true",
@@ -95,7 +99,8 @@ def main(argv: list[str] | None = None) -> int:
 
     results = []
     with cf.ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futures = {ex.submit(probe_one, h, args.path, args.timeout, not args.no_http): h
+        futures = {ex.submit(probe_one, h, args.path, args.timeout,
+                             not args.no_http, args.verify): h
                    for h in targets}
         for fut in cf.as_completed(futures):
             results.append(fut.result())

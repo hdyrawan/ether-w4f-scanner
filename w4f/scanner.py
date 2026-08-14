@@ -327,7 +327,77 @@ def fingerprint(result: dict) -> list[dict]:
     return matches
 
 
-def probe_one(hostport: str, path: str, timeout: float, do_http: bool) -> dict:
+def verify_block(host: str, port: int, timeout: float) -> dict | None:
+    """OPT-IN active probe: send one benign attack-shaped query and check
+    for a WAF block page.
+
+    Passive fingerprinting cannot see WAFs that only reveal themselves when
+    they block something (FortiWeb, F5 ASM…). This sends a single harmless
+    query-string `<script>` marker (no exploit — nothing executes, the WAF
+    just decides whether to answer with a block page) and matches the
+    response against known block-page signatures. Off by default; enable
+    with --verify.
+
+    Returns a dict {vendor, title, status} or None when nothing matches.
+    """
+    req = (
+        f"GET /?q=%3Cscript%3Everify%28%29%3B%3C%2Fscript%3E&z=1%27%20OR%20%271%27%3D%271 HTTP/1.1\r\n"
+        f"Host: {host}\r\n"
+        f"User-Agent: {UA}\r\n"
+        "Accept: */*\r\n"
+        "Connection: close\r\n\r\n"
+    )
+    try:
+        sock = socket.create_connection((host, port), timeout=timeout)
+        ctx = ssl._create_unverified_context()
+        ctx.set_alpn_protocols(["http/1.1"])
+        with ctx.wrap_socket(sock, server_hostname=host) as ts:
+            ts.settimeout(timeout)
+            ts.sendall(req.encode())
+            data = b""
+            # Read until close / timeout — WAF block pages put <title> at
+            # arbitrary offsets (FortiWeb's is near the END of a 39KB page),
+            # so a header-stop read misses it.
+            while len(data) < 65536:
+                try:
+                    chunk = ts.recv(4096)
+                except socket.timeout:
+                    break
+                if not chunk:
+                    break
+                data += chunk
+        head, _, body = data.partition(b"\r\n\r\n")
+        lines = head.decode("latin-1", "replace").split("\r\n")
+        status = lines[0] if lines else ""
+        head_txt = head.decode("latin-1", "replace").lower()
+        body_text = body[:65536].decode("latin-1", "replace").lower()
+        title = ""
+        m = re.search(r"<title[^>]*>(.*?)</title>", body_text, re.I | re.S)
+        if m:
+            title = re.sub(r"\s+", " ", m.group(1)).strip()
+    except Exception:
+        return None
+
+    # Block-page signatures — title fragments are the strongest, most
+    # stable marker (FortiWeb / F5 ASM use the same titles across builds).
+    # FortiWeb localizes its title ("The URL Request Tidak Tersedia" on the
+    # Indonesian fleet), so match both the English and ID fragments.
+    if ("the url you requested has been blocked" in title
+            or ("tidak tersedia" in title and "url" in title)):
+        return {"vendor": "fortiweb", "title": title, "status": status}
+    if title.lower().startswith("request rejected") and "f5" in head_txt:
+        return {"vendor": "f5-asm", "title": title, "status": status}
+    if title.lower().startswith("request rejected"):
+        return {"vendor": "f5-asm", "title": title, "status": status}
+    if "attention required" in title and "cloudflare" in body_text:
+        return {"vendor": "cloudflare", "title": title, "status": status}
+    if "incapsula" in body_text or "incap_ses" in head_txt:
+        return {"vendor": "imperva", "title": title, "status": status}
+    return None
+
+
+def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
+              verify: bool = False) -> dict:
     host, _, port_s = hostport.rpartition(":")
     if not host:
         host = hostport
@@ -369,6 +439,10 @@ def probe_one(hostport: str, path: str, timeout: float, do_http: bool) -> dict:
             result["chain_verified"] = tls.get("chain_verified")
         result["mtls"] = tls.get("mtls", False)
         result["verdict"] = fingerprint(result)
+        if verify:
+            blk = verify_block(host, port, timeout)
+            if blk:
+                result["block"] = blk
     except Exception as e:
         result["error"] = f"probe failed: {e}"
     return result
