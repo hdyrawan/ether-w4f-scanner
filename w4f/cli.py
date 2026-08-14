@@ -7,6 +7,7 @@ import concurrent.futures as cf
 import json
 import sys
 
+from w4f.banner import BANNER
 from w4f.report import fmt_block, md_doc
 from w4f.scanner import probe_one
 
@@ -95,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
     results.sort(key=lambda r: r["hostport"])
 
     if not args.quiet:
+        print(BANNER)
+        print()
         for r in results:
             print(fmt_block(r))
             print()

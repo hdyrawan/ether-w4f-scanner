@@ -79,6 +79,11 @@ w4f --target host[:port] [--target host2[:port] ...] \
 At least one of `--target` or `--target-json` is required. Multiple targets
 are scanned in parallel; results are printed sorted by host.
 
+The **banner** is the Rebel figlet "w4f" (patorjk taag style, x=none
+full-width), with `w` in red and `f` in blue. It prints at the top of every
+non-quiet run; use `--quiet` to suppress it entirely (e.g. for
+`--json`/`--md` automation).
+
 Example — scan every subdomain in a subdomainfinder.c99.nl export:
 
 ```

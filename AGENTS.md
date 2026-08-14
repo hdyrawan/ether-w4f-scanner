@@ -41,6 +41,12 @@ the tool and its documentation.
   objects, array of strings, or `{subdomains:[...]}`) — each subdomain is
   scanned like a `--target`. At least one of the two is required; combine
   freely. Keep the flag names stable — other repos and docs reference them.
+- **Banner:** `w4f/banner.py` embeds the Rebel figlet glyphs for "w4f"
+  (patorjk taag style, x=none) with per-letter ANSI colors — w red, f blue,
+  4 plain. Shown at the top of every non-quiet run; `--quiet` suppresses it.
+  The glyph rows are verbatim from DOS Rebel.flf (hardblank `$` → space,
+  trailing `@` endmarks stripped, all 11 rows kept) — do not "improve" the
+  layout, it must match taag.
 - **Pure stdlib + two optional deps.** `cryptography` (cert parsing) and
   `dnspython` (CNAME/PTR) are optional; the scanner must degrade gracefully
   without either. Never add a hard dependency.
