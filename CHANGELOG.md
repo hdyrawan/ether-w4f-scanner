@@ -5,6 +5,41 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.24] — 2026-08-14
+
+Modular vendor signatures.
+
+- **Signatures moved to `w4f/signatures/`** — one file per vendor (or a
+  small logical family: `cdn.py`, `waf.py`, `bot.py`, `gateways.py`,
+  `origins.py`, `platforms.py`). Adding a vendor is now a PR that adds one
+  file under that package (copy `_template.py`) plus a test — no changes to
+  the matcher, CLI, or confidence engine.
+- **Validating loader** (`w4f/signatures/__init__.py`): imports every
+  non-private module, validates each vendor (unique `name`, allowed keys
+  only, compilable regexes, valid `requires`/`weights`/netblocks), and
+  assembles the exact table the fingerprint loop consumes
+  (`VENDORS[name] = rules`, `name` stripped). A bad signature fails fast
+  with `SignatureError` at import time.
+- **`w4f/vendors.py` is now engine + assembly only** — it loads the
+  signatures package and exposes the same public surface (`VENDORS`,
+  `INTERESTING_HEADERS`, `vendor_nets`).
+- **Optional stretch — `W4F_SIGNATURES=/path/to/rules.py`**: load extra
+  local rules at startup, same schema, override/merge by name (local wins).
+  No flag needed; auto-load is the default behavior.
+- **Behavior preserved**: all 70 vendor rule dicts byte-identical to the
+  pre-modular table, verified by an automated diff; existing tests pass
+  unchanged. One pre-existing dead regex fixed en route:
+  `azure-api-management` CNAME was over-escaped (`azure-api\\.net` never
+  matched) and now correctly matches `azure-api.net`.
+- **Docs**: `docs/vendor-signatures.md` gains the directory layout, the
+  signature schema, the `requires`/`weights` reference, and a step-by-step
+  "add a vendor" contributor guide.
+- **Tests**: +13 loader tests (package discovery, template exclusion,
+  duplicate-name / bad-regex / missing-name / unknown-key / bad-netblock
+  rejection, extra-file add+override, `W4F_SIGNATURES` env hook).
+
+200 tests total.
+
 ## [0.1.23] — 2026-08-14
 
 SARIF 2.1.0 output for security dashboards.

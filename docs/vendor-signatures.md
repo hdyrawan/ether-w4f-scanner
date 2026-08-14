@@ -1,9 +1,61 @@
 # w4f vendor signature reference
 
-Why each signal identifies the vendor it does. The rule table in
-`w4f/vendors.py` is the machine-readable source of truth; this file is the
-human-readable *why*. For a full list of vendors and their live evidence,
-run `w4f --target <host>` and read the `verdict` line.
+Why each signal identifies the vendor it does. The machine-readable source
+of truth is the signature modules under `w4f/signatures/` (the loader
+validates and assembles them; `w4f/vendors.py` is just the engine-side
+assembly). This file is the human-readable *why*, plus the contributor
+guide for adding a new vendor. For a full list of vendors and their live
+evidence, run `w4f --target <host>` and read the `verdict` line.
+
+## Directory layout
+
+```
+w4f/signatures/
+  __init__.py     # discovery + validation + assembly (the loader)
+  _template.py    # documented example — COPY THIS to add a vendor
+  cdn.py          # CDN/edge family (cloudflare, akamai, fastly, aws-*, ...)
+  waf.py          # WAF/protection family (fortiweb, f5, sucuri, ...)
+  bot.py          # bot-management (datadome, perimeterx, kasada, ...)
+  gateways.py     # API gateways / platform edges (kong, tyk, vercel, ...)
+  origins.py      # plain origin servers (nginx, apache, iis, varnish, ...)
+  platforms.py    # remaining platform edges (google-gfe, wix, squarespace, ...)
+```
+
+A vendor is a dict with a `name` plus optional signal keys. A module may
+export `VENDOR` (single dict) or `VENDORS` (list of dicts). The loader:
+
+1. imports every non-private module under the package (`_`-prefixed files
+   are ignored — `_template.py` is never loaded as a signature),
+2. validates each vendor (unique `name`, known keys only, compilable
+   regexes, valid `requires`/`weights`/netblocks) — a bad signature fails
+   fast with `SignatureError` at import time,
+3. assembles the table the fingerprint engine consumes:
+   `VENDORS[name] = {rules}` (the `name` key is stripped, so the shape is
+   identical to the pre-modular layout).
+
+## The signature schema
+
+```python
+VENDOR = {
+    "name": "my-vendor",            # REQUIRED, unique
+    "headers": {                    # header_name: regex-or-None (None = presence)
+        "server": r"my-vendor(?:/|$)",
+        "x-my-vendor-id": None,
+    },
+    "cookies": [r"^myvendor_session="],   # regexes against Set-Cookie values
+    "cert": r"my vendor",           # regex against issuer+subject (lowercased)
+    "cname": r"myvendor\.com",      # regex against any CNAME (lowercased)
+    "ptr": r"myvendor\.net",        # regex against any PTR (lowercased)
+    "nets": ["203.0.113.0/24"],     # IP networks the host must resolve inside
+    "requires": [...],              # optional AND/OR gate (see below)
+    "weights": {"cname": 25},       # optional confidence override
+}
+```
+
+Allowed keys: `name`, `headers`, `cookies`, `cert`, `cname`, `ptr`, `nets`,
+`requires`, `weights`. Anything else is a hard loader error. A header key
+ending in `*` is a prefix match (exact keys stay exact — the arvancloud
+lesson: a glob that never fires is a dead rule).
 
 ## How signals are weighted
 
@@ -121,3 +173,35 @@ verdict  cloudflare (5, 82%): header server: cloudflare; header cf-ray: …;
 
 `(5, 82%)` = five evidence strings, 82% confidence. Every evidence string
 names its category so you can judge it yourself.
+
+## Adding a vendor (contributor guide)
+
+A vendor is added by a PR that touches **only** files under
+`w4f/signatures/` plus a test — no changes to the matcher, CLI, or
+confidence engine.
+
+1. **Copy the template**: `w4f/signatures/_template.py` → a new file
+   `w4f/signatures/<vendor>.py` (or add the dict to the matching family
+   file — `cdn.py`, `waf.py`, `bot.py`, `gateways.py`, `origins.py`,
+   `platforms.py`).
+2. **Fill in what you observed.** Set `name` (unique), then only the
+   signal keys you actually saw the edge emit. Delete unused fields — a
+   field must not be present with an empty value.
+3. **Verify it loads**: `python -c "from w4f.vendors import VENDORS; print(VENDORS['<name>'])"`.
+   A bad regex / unknown key / duplicate name fails here with
+   `SignatureError` — fix before running anything else.
+4. **Add a test** in `tests/test_fingerprint.py` (the smallest example is
+   `test_squarespace_platform`): build a `_result(...)` with the signals
+   your vendor matches and assert the vendor is in `fingerprint(r)`.
+   If the vendor is a composite rule, also add a negative test (the signal
+   *alone* must not fire without the `requires` gate).
+5. **Run the suite**: `python -m pytest tests/ -q` (must stay green).
+6. **PR it** — the loader does the rest.
+
+### Local rules without a PR (optional stretch)
+
+Set `W4F_SIGNATURES=/path/to/rules.py` and w4f loads that file at startup
+as extra signatures — same `VENDOR`/`VENDORS` shape, validated the same
+way, **override/merge by name** (a local rule with an existing name wins
+over the builtin). Useful for internal-only edges you do not want to
+publish.
