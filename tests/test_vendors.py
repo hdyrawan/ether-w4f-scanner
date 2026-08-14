@@ -132,6 +132,12 @@ class TestNewSignatures:
     def test_pepyaka_wix(self):
         assert "pepyaka" in self._names(headers={"server": "Pepyaka", "x-cache-status": "HIT"})
 
+    def test_kong_gateway(self):
+        # example-ride.com: X-Kong-* latency headers (Kong API gateway)
+        assert "kong" in self._names(
+            headers={"x-kong-upstream-latency": "8", "x-kong-proxy-latency": "1"})
+        assert "kong" in self._names(headers={"server": "kong/3.4.1"})
+
     def test_bytedance_tiktok(self):
         # TikTok: server TLB + x-tt-logid (ByteDance edge, not Akamai Kona)
         assert "bytedance" in self._names(

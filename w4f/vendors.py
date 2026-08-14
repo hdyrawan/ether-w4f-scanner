@@ -152,6 +152,12 @@ VENDORS: dict[str, dict] = {
     "openresty": {
         "headers": {"server": r"openresty"},
     },
+    "kong": {
+        # Kong API gateway — example-ride.com serves X-Kong-* latency headers
+        # (and `Server: kong` on older builds).
+        "headers": {"server": r"kong", "x-kong-upstream-latency": None,
+                    "x-kong-proxy-latency": None},
+    },
     "tengine": {
         # Alibaba's nginx fork — example-market.com / tmall / aliexpress family.
         "headers": {"server": r"tengine", "x-server-id": None, "x-eagleeye-id": None},
