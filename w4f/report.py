@@ -262,3 +262,134 @@ def csv_doc(results: list[dict]) -> str:
             r.get("error", ""),
         ])
     return buf.getvalue()
+
+
+# SARIF 2.1.0 schema (GitHub Code Scanning / security dashboards).
+_SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
+_SARIF_VERSION = "2.1.0"
+
+
+def _sarif_level(r: dict) -> str:
+    """Map a probe result to a SARIF severity level.
+
+    error   — the host could not be probed (DNS failure, probe exception)
+    warning — a WAF/CDN edge was positively identified (the finding a
+              security dashboard wants surfaced) or --verify found a block
+              page; also mTLS (server demands a client cert)
+    note    — scan completed with no edge verdict (unknown origin)
+    """
+    if r.get("error"):
+        return "error"
+    if (r.get("block") or {}).get("vendor") or r.get("verdict") or r.get("mtls"):
+        return "warning"
+    return "note"
+
+
+def sarif_doc(results: list[dict], tool_version: str = "") -> str:
+    """SARIF 2.1.0 report: one result per scanned host.
+
+    Rule ids are namespaced ``w4f/<vendor>`` (e.g. ``w4f/cloudflare``),
+    ``w4f/block`` for a --verify block page, ``w4f/mtls`` for a server that
+    demands a client certificate, and ``w4f/probe-error`` when the host
+    could not be scanned. The host is the SARIF location; evidence and the
+    confidence score ride along in properties. No fingerprint-semantics
+    changes — this is a projection of the same result dicts as --json.
+    """
+    import json
+
+    # rules referenced by any result, deduped in first-seen order
+    rules: list[dict] = []
+    rule_ids: dict[str, int] = {}  # ruleId -> index in rules
+
+    def _rule(rule_id: str, name: str, desc: str, level: str) -> dict:
+        if rule_id in rule_ids:
+            return rules[rule_ids[rule_id]]
+        rule_ids[rule_id] = len(rules)
+        r = {
+            "id": rule_id,
+            "name": name,
+            "shortDescription": {"text": desc},
+            "defaultConfiguration": {"level": level},
+        }
+        rules.append(r)
+        return r
+
+    sarif_results = []
+    for r in results:
+        host = r.get("host") or r.get("hostport", "")
+        err = r.get("error")
+        blk = r.get("block") or {}
+        ver = r.get("verdict") or []
+        top = ver[0] if ver else {}
+        level = _sarif_level(r)
+        props = {
+            "hostport": r.get("hostport", host),
+            "port": r.get("port", ""),
+            "ips": r.get("ips", []) or [],
+            "cname": r.get("cname", []) or [],
+            "tls_version": (r.get("tls") or {}).get("tls_version", ""),
+            "alpn": (r.get("tls") or {}).get("alpn", ""),
+            "mtls": bool(r.get("mtls")),
+            "spki_sha256": r.get("spki_sha256", ""),
+            "http_status": ((r.get("tls") or {}).get("http") or {}).get("status", ""),
+            "error": err or "",
+            "confidence": top.get("confidence", ""),
+            "signals": top.get("signals", ""),
+            "evidence": top.get("evidence", []) or [],
+        }
+
+        if err:
+            _rule("w4f/probe-error", "probe-error", "host could not be scanned", "error")
+            rule_id = "w4f/probe-error"
+            message = f"{host}: {err}"
+        elif blk.get("vendor"):
+            _rule("w4f/block", "block-page", "WAF block page from --verify", "warning")
+            rule_id = "w4f/block"
+            message = (f"{host}: WAF block page ({blk['vendor']}) — "
+                       f"{blk.get('title', '')} ({blk.get('status', '')})")
+        elif r.get("mtls"):
+            _rule("w4f/mtls", "mutual-tls", "server demands a client certificate", "warning")
+            rule_id = "w4f/mtls"
+            message = f"{host}: server demands a client certificate (mTLS)"
+        elif ver:
+            names = ", ".join(m["vendor"] for m in ver)
+            rule_id = f"w4f/{top['vendor']}"
+            _rule(rule_id, top["vendor"], f"edge identified as {top['vendor']}", "warning")
+            message = (f"{host}: edge {names} — top {top['vendor']} "
+                       f"(confidence {top.get('confidence', 0)}%, "
+                       f"{top.get('signals', 0)} signals)")
+        else:
+            _rule("w4f/unknown-edge", "unknown-edge",
+                  "no CDN/WAF signature matched (unknown origin)", "note")
+            rule_id = "w4f/unknown-edge"
+            message = f"{host}: no CDN/WAF signature matched (unknown edge)"
+
+        sarif_results.append({
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": message},
+            "locations": [{
+                "physicalLocation": {
+                    "artifactLocation": {"uri": host},
+                    "region": {"startLine": 1},
+                }
+            }],
+            "properties": props,
+        })
+
+    run = {
+        "tool": {
+            "driver": {
+                "name": "w4f",
+                "informationUri": "https://github.com/hdyrawan/w4f",
+                "version": tool_version or "0",
+                "rules": rules,
+            }
+        },
+        "results": sarif_results,
+    }
+    return json.dumps({
+        "$schema": _SARIF_SCHEMA,
+        "version": _SARIF_VERSION,
+        "runs": [run],
+    }, indent=2)

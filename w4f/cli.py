@@ -12,7 +12,7 @@ import time
 
 from w4f import __version__
 from w4f.banner import BANNER
-from w4f.report import csv_doc, fmt_block, md_doc
+from w4f.report import csv_doc, fmt_block, md_doc, sarif_doc
 from w4f.scanner import probe_one
 
 
@@ -246,6 +246,11 @@ def build_parser() -> argparse.ArgumentParser:
                          "with host, port, ips, cname, verdict, confidence, "
                          "signals, mtls, tls_version, alpn, spki, http_status, "
                          "block, error")
+    ap.add_argument("--sarif", metavar="FILE",
+                    help="write a SARIF 2.1.0 report (security dashboards, "
+                         "GitHub Code Scanning) — one result per host with "
+                         "rule ids w4f/<vendor>, w4f/block, w4f/mtls, "
+                         "w4f/probe-error, w4f/unknown-edge")
     ap.add_argument("--no-http", action="store_true",
                     help="TLS/cert/DNS only, skip the HTTP request")
     ap.add_argument("--verify", action="store_true",
@@ -349,6 +354,10 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.csv, "w", newline="", encoding="utf-8") as f:
             f.write(csv_doc(results))
         print(f"CSV -> {args.csv}", file=sys.stderr)
+    if args.sarif:
+        with open(args.sarif, "w", encoding="utf-8") as f:
+            f.write(sarif_doc(results, tool_version=__version__))
+        print(f"SARIF -> {args.sarif}", file=sys.stderr)
 
     # A host that failed is a real failure: signal it so scripts can tell
     # "all clean" from "some hosts errored" without parsing the JSON.

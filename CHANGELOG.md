@@ -5,6 +5,25 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.23] — 2026-08-14
+
+SARIF 2.1.0 output for security dashboards.
+
+- **`--sarif FILE`** — writes a SARIF 2.1.0 report (GitHub Code Scanning,
+  DefectDojo, other security dashboards): one result per scanned host, rule
+  ids `w4f/<vendor>` (edge identified), `w4f/block` (--verify WAF block
+  page), `w4f/mtls` (server demands a client cert), `w4f/probe-error`
+  (host could not be scanned), `w4f/unknown-edge` (no signature matched).
+  Levels map to severity: error (probe failure), warning (edge/block/mTLS),
+  note (unknown edge). The host is the SARIF location; confidence, signals,
+  evidence, IPs, CNAME, TLS version, ALPN, SPKI and HTTP status ride in
+  `properties`. Tool driver = w4f with the declared rules.
+- Validated against the official `sarif-2.1.0.json` schema.
+- Works with `--quiet` alongside `--json`/`--md`/`--csv`.
+- README flags table + usage example.
+
++4 tests (187 total).
+
 ## [0.1.22] — 2026-08-14
 
 Stdin/file target inputs + flat CSV output.

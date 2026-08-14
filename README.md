@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.22
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.23
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -169,6 +169,9 @@ subfinder -d example.com -silent | w4f --csv sweep.csv
 # flat CSV output for spreadsheets (primary verdict per host)
 w4f --target-file hosts.txt --csv sweep.csv
 
+# SARIF 2.1.0 for security dashboards / GitHub Code Scanning
+w4f --target-file hosts.txt --sarif scan.sarif
+
 # catch silent WAFs with the one-query active probe
 w4f --target api.example.com --verify
 
@@ -193,6 +196,7 @@ w4f --target api.example.com --no-http
 | `--json FILE` | write the full machine-readable result tree to FILE |
 | `--md FILE` | write a markdown sweep (table + per-host blocks) to FILE |
 | `--csv FILE` | write a flat CSV — one row per host, primary verdict: host, port, ips, cname, verdict, confidence, signals, mtls, tls_version, alpn, spki, http_status, block, error |
+| `--sarif FILE` | write a SARIF 2.1.0 report for security dashboards / GitHub Code Scanning — one result per host, rule ids `w4f/<vendor>`, `w4f/block`, `w4f/mtls`, `w4f/probe-error`, `w4f/unknown-edge` |
 | `--no-http` | TLS/cert/DNS only, skip the HTTP request |
 | `--verify` | **OPT-IN active probe** — one benign `<script>` query per host; reports the WAF block page (FortiWeb / F5 ASM / Cloudflare / Imperva) |
 | `--version` | print version and exit |
@@ -226,7 +230,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.22
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.23
 
 api.example.com:443
 ip        45.60.16.239

@@ -279,3 +279,78 @@ class TestCsvOutput:
         j = _json.loads(json_p.read_text())
         assert j and j[0]["hostport"] == f"127.0.0.1:{srv.port}"
         assert csv_p.read_text().splitlines()[0].startswith("host,port")
+
+
+class TestSarifOutput:
+    def test_sarif_schema_shape(self):
+        from w4f.report import sarif_doc
+        import json
+        doc = json.loads(sarif_doc([], tool_version="0.1.22"))
+        assert doc["version"] == "2.1.0"
+        assert doc["$schema"].endswith("sarif-2.1.0.json")
+        run = doc["runs"][0]
+        assert run["tool"]["driver"]["name"] == "w4f"
+        assert run["tool"]["driver"]["version"] == "0.1.22"
+        assert run["results"] == []
+
+    def test_sarif_result_mapping(self):
+        from w4f.report import sarif_doc
+        import json
+        results = [{
+            "host": "api.example.com", "hostport": "api.example.com:443",
+            "port": 443, "ips": ["104.18.1.79"], "cname": ["x.cdn.cloudflare.net"],
+            "mtls": False, "spki_sha256": "abc123",
+            "tls": {"tls_version": "TLSv1.3", "alpn": "h2",
+                    "http": {"status": "HTTP/1.1 200 OK"}},
+            "verdict": [{"vendor": "cloudflare", "confidence": 82, "signals": 3,
+                         "evidence": ["header server: cloudflare"]}],
+            "block": None, "error": None,
+        }]
+        doc = json.loads(sarif_doc(results, tool_version="0.1.22"))
+        run = doc["runs"][0]
+        res = run["results"][0]
+        assert res["ruleId"] == "w4f/cloudflare"
+        assert res["level"] == "warning"
+        assert "api.example.com" in res["message"]["text"]
+        assert res["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == "api.example.com"
+        assert res["properties"]["confidence"] == 82
+        assert res["properties"]["spki_sha256"] == "abc123"
+        # the rule is declared on the driver
+        rule_ids = [r["id"] for r in run["tool"]["driver"]["rules"]]
+        assert "w4f/cloudflare" in rule_ids
+
+    def test_sarif_error_and_block_levels(self):
+        from w4f.report import sarif_doc
+        import json
+        results = [
+            {"host": "bad.invalid", "hostport": "bad.invalid:443", "port": 443,
+             "ips": [], "cname": [], "mtls": False, "tls": None,
+             "verdict": [], "block": None, "error": "DNS did not resolve"},
+            {"host": "waf.example.com", "hostport": "waf.example.com:443",
+             "port": 443, "ips": ["1.2.3.4"], "cname": [], "mtls": False,
+             "tls": {"tls_version": "TLSv1.3", "alpn": "h2",
+                     "http": {"status": "HTTP/1.1 200 OK"}},
+             "verdict": [], "block": {"vendor": "fortiweb", "title": "Blocked"},
+             "error": None},
+        ]
+        doc = json.loads(sarif_doc(results))
+        res = doc["runs"][0]["results"]
+        assert res[0]["level"] == "error"
+        assert res[0]["ruleId"] == "w4f/probe-error"
+        assert res[1]["level"] == "warning"
+        assert res[1]["ruleId"] == "w4f/block"
+
+    def test_sarif_unknown_edge_note(self):
+        from w4f.report import sarif_doc
+        import json
+        results = [{
+            "host": "plain.example.com", "hostport": "plain.example.com:443",
+            "port": 443, "ips": ["1.2.3.4"], "cname": [], "mtls": False,
+            "tls": {"tls_version": "TLSv1.3", "alpn": "h2",
+                    "http": {"status": "HTTP/1.1 200 OK"}},
+            "verdict": [], "block": None, "error": None,
+        }]
+        doc = json.loads(sarif_doc(results))
+        res = doc["runs"][0]["results"][0]
+        assert res["ruleId"] == "w4f/unknown-edge"
+        assert res["level"] == "note"
