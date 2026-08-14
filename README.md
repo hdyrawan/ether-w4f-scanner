@@ -105,6 +105,21 @@ Before this, `aquarius.banksaqu.co.id` (CNAME `*.eo.dnse4.com`) reported
 "unknown edge" even though the endpoint research had already documented the
 Tencent EdgeOne edge — the tool must never lag the documented evidence.
 
+**v0.1.3 note:** three more gaps closed from a full-corpus re-sweep:
+- **`aws-ec2`** — bare EC2 origins (PTR `compute-N.amazonaws.com`) now get
+  a verdict instead of "unknown edge" (`analytics.appdome.com`).
+- **HAProxy cookie** — stick-table persistence cookie `<name>=!<base64>`
+  (`mbanking.brksyariah.co.id`'s `brks_lb=!…`), for hosts that hide the
+  Server header.
+- **`gtm-gslb`** — DNS GTM/GSLB CNAMEs `gtm-<region>-<hash>.gtm-i1d6.com`
+  (`api-external.mncbank.co.id`); classified as the load-balancer class, not
+  a vendor, because the CNAME does not name the product.
+- **header read on untrusted chains** — `http_get` now retries without
+  validation when the chain is not trusted from the scanning client, so
+  private-chain hosts still expose their headers (`bankdki.co.id` →
+  `nginx`). Headers are fingerprint evidence; we don't need to trust the
+  chain to read them.
+
 ## Vendor coverage
 
 Cloudflare, Imperva, Akamai, AWS CloudFront / WAF / ELB / S3, Fastly, Azure
