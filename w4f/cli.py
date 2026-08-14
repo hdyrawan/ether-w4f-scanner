@@ -122,6 +122,11 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.md, "w") as f:
             f.write(md_doc(results))
         print(f"MD  -> {args.md}", file=sys.stderr)
+
+    # A host that failed is a real failure: signal it so scripts can tell
+    # "all clean" from "some hosts errored" without parsing the JSON.
+    if any(r.get("error") for r in results):
+        return 1
     return 0
 
 

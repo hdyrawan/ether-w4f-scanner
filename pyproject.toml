@@ -4,17 +4,37 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "w4f"
-version = "0.1.9"
+version = "0.1.10"
 description = "Passive TLS / CDN / WAF / edge fingerprinting of API endpoints"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "hdyrawan" }]
+keywords = ["cdn", "waf", "fingerprint", "tls", "edge", "dns", "security", "recon"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Internet :: WWW/HTTP",
+]
 dependencies = []
 
 [project.optional-dependencies]
 full = ["cryptography", "dnspython"]
 dev = ["pytest>=8", "cryptography", "dnspython"]
+
+[project.urls]
+Homepage = "https://github.com/hdyrawan/w4f"
+Repository = "https://github.com/hdyrawan/w4f"
+Issues = "https://github.com/hdyrawan/w4f/issues"
 
 [project.scripts]
 w4f = "w4f.cli:main"
