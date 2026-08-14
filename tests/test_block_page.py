@@ -1,0 +1,106 @@
+"""match_block_page() / parse_http_response() unit tests.
+
+These cover the --verify active-probe logic, including the two real traps
+found in the field: FortiWeb's <title> sitting at the END of a 39KB body,
+and FortiWeb's localized Indonesian title.
+"""
+
+from __future__ import annotations
+
+from w4f.scanner import match_block_page, parse_http_response
+
+
+def _fortiweb_body_en(title=" The URL you requested has been blocked "):
+    # ~39KB of filler with the title near the end — the real observed shape
+    # (FortiWeb HTML4 block page).
+    filler = b"x" * 38000
+    return filler + f"<html><head><title>{title}</title></head><body>block</body></html>".encode()
+
+
+def _fortiweb_body_id():
+    return _fortiweb_body_en(title=" The URL Request Tidak Tersedia ")
+
+
+class TestMatchFortiWeb:
+    def test_english_title(self):
+        body = _fortiweb_body_en()
+        parsed = parse_http_response(b"HTTP/1.1 500 Internal Server Error\r\n\r\n" + body)
+        got = match_block_page(parsed["title"], parsed["head_text"],
+                               parsed["body_text"], parsed["status"])
+        assert got == {"vendor": "fortiweb", "title": "The URL you requested has been blocked",
+                       "status": "HTTP/1.1 500 Internal Server Error"}
+
+    def test_localized_id_title(self):
+        body = _fortiweb_body_id()
+        parsed = parse_http_response(b"HTTP/1.1 500 Internal Server Error\r\n\r\n" + body)
+        got = match_block_page(parsed["title"], parsed["head_text"],
+                               parsed["body_text"], parsed["status"])
+        assert got and got["vendor"] == "fortiweb"
+        assert "Tidak Tersedia" in got["title"]
+
+    def test_title_far_in_body(self):
+        # Regression: the original probe read only 4KB after the header and
+        # missed titles past that. parse_http_response must find it anywhere
+        # in the first 64KB.
+        parsed = parse_http_response(b"HTTP/1.1 500 Internal Server Error\r\n\r\n"
+                                     + _fortiweb_body_en())
+        assert "has been blocked" in parsed["title"]
+
+
+class TestMatchOther:
+    def test_f5_request_rejected(self):
+        parsed = parse_http_response(
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+            b"<html><head><title>Request Rejected</title></head></html>"
+        )
+        got = match_block_page(parsed["title"], parsed["head_text"],
+                               parsed["body_text"], parsed["status"])
+        assert got and got["vendor"] == "f5-asm"
+
+    def test_cloudflare_attention_required(self):
+        parsed = parse_http_response(
+            b"HTTP/1.1 403 Forbidden\r\nServer: cloudflare\r\n\r\n"
+            b"<html><head><title>Attention Required! | Cloudflare</title></head>"
+            b"<body>cloudflare</body></html>"
+        )
+        got = match_block_page(parsed["title"], parsed["head_text"],
+                               parsed["body_text"], parsed["status"])
+        assert got and got["vendor"] == "cloudflare"
+
+    def test_imperva_incapsula_body(self):
+        parsed = parse_http_response(
+            b"HTTP/1.1 403 Forbidden\r\n\r\n"
+            b"<html>Request blocked by Incapsula</html>"
+        )
+        got = match_block_page(parsed["title"], parsed["head_text"],
+                               parsed["body_text"], parsed["status"])
+        assert got and got["vendor"] == "imperva"
+
+    def test_no_match_plain_page(self):
+        parsed = parse_http_response(
+            b"HTTP/1.1 200 OK\r\nServer: nginx\r\n\r\n<html><title>Login</title></html>"
+        )
+        assert match_block_page(parsed["title"], parsed["head_text"],
+                                parsed["body_text"], parsed["status"]) is None
+
+
+class TestParseHttpResponse:
+    def test_headers_lowercased_and_split(self):
+        data = (
+            b"HTTP/1.1 302 Found\r\n"
+            b"Server: nginx\r\n"
+            b"X-Custom: a:b\r\n"
+            b"Set-Cookie: a=1; Path=/\r\n"
+            b"Set-Cookie: b=2\r\n\r\n"
+            b"<html></html>"
+        )
+        p = parse_http_response(data)
+        assert p["status"] == "HTTP/1.1 302 Found"
+        assert p["headers"]["server"] == "nginx"
+        assert p["headers"]["x-custom"] == "a:b"
+        assert p["set-cookie-list"] == ["a=1; Path=/", "b=2"]
+
+    def test_empty_data(self):
+        p = parse_http_response(b"")
+        assert p["status"] == ""
+        assert p["headers"] == {}

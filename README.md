@@ -167,6 +167,37 @@ Varnish, ArvanCloud, **Tencent EdgeOne / Tencent CDN**, Baidu Yunjiasu,
 FortiWeb, ModSecurity, NAXSI, Wallarm, Wordfence, Zenedge, Zscaler,
 DDoS-Guard, Edgecast, MaxCDN, KeyCDN, Barracuda, Huawei Cloud WAF, SafeDog.
 
+## Testing
+
+```
+pip install .[dev]
+python -m pytest
+```
+
+71 tests, offline (a local TLS server with a self-signed cert exercises the
+real socket path without touching the internet). Coverage:
+- **fingerprint matching** — real-world positive cases from the 2026-08-14
+  Indonesian bank sweep (Cloudflare, Tencent EdgeOne, F5 TS-cookie,
+  HAProxy stick cookie, GTM/GSLB, AWS ELB/EC2, Imperva, GFE, nginx) plus
+  false-positive guards (a Cloudflare IP alone is Cloudflare — anycast —
+  but a plain nginx host on a random IP must not claim a WAF).
+- **block-page matcher** (`--verify`) — FortiWeb EN + localized ID titles,
+  F5 ASM "Request Rejected", Cloudflare, Imperva, the title-at-end-of-39KB-
+  body trap, and no-match cases.
+- **vendor table sanity** — every regex compiles, every vendor has a
+  signal, netblocks are valid, and the tricky regexes (TS cookie forms,
+  HAProxy stick cookie, GTM CNAME, EC2 PTR) are spot-checked.
+- **CLI / report / banner** — `--version`, `--target-json` shapes, plain
+  console output (no markdown), markdown `--md` output, banner colors and
+  blank-row trimming.
+- **integration** — real TLS handshake, cert parse (SPKI SHA-256), HTTP
+  header/cookie parsing, `probe_one` end-to-end against the local server.
+  These need `cryptography`; they skip automatically if it is absent.
+
+CI (GitHub Actions) runs the suite on Python 3.10/3.11/3.12 with full
+extras, plus a no-optional-deps job proving graceful degradation, plus a
+CLI smoke check.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

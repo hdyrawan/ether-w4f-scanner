@@ -1,0 +1,112 @@
+"""Integration tests: real TLS sockets against a LOCAL server.
+
+These exercise the actual socket/handshake path (tls_probe, http_get,
+verify_block, probe_one) without touching the internet — the server is a
+127.0.0.1 thread with a self-signed cert. Self-signed means chain_verified
+will be False from the default context, which is expected and asserted.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from w4f.scanner import http_get, probe_one, tls_probe, verify_block
+
+
+@pytest.fixture(autouse=True)
+def _anyio_backend():
+    pass  # placeholder to keep test layout obvious; no async used
+
+
+class TestTlsProbe:
+    def test_handshake_and_cert(self, tls_server):
+        srv = tls_server()
+        out = tls_probe("127.0.0.1", srv.port, "/", 5.0, do_http=False)
+        assert out["tls_version"] in ("TLSv1.2", "TLSv1.3")
+        assert out["chain_verified"] is False  # self-signed
+        assert out["cert"] and out["cert"]["issuer_org"] == ""
+        assert out["cert"]["subject"]  # parsed CN present
+
+    def test_cert_spki_sha256_present(self, tls_server):
+        srv = tls_server()
+        out = tls_probe("127.0.0.1", srv.port, "/", 5.0, do_http=False)
+        assert len(out["cert"].get("spki_sha256", "")) == 64
+
+    def test_connect_refused(self):
+        # bind a socket, grab its port, close it — nothing listens there
+        import socket
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        out = tls_probe("127.0.0.1", port, "/", 2.0, do_http=False)
+        assert "connect failed" in (out.get("tls_error") or "")
+
+
+class TestHttpGet:
+    def test_status_and_headers(self, tls_server):
+        srv = tls_server(status="HTTP/1.1 404 Not Found",
+                         headers=["Server: nginx/1.24.0", "X-Custom: yes"],
+                         body=b"not found")
+        out = http_get("127.0.0.1", srv.port, "/", 5.0)
+        assert out["status"] == "HTTP/1.1 404 Not Found"
+        assert out["headers"]["server"] == "nginx/1.24.0"
+        assert out["headers"]["x-custom"] == "yes"
+
+    def test_multiple_set_cookie(self, tls_server):
+        srv = tls_server(headers=[
+            "Set-Cookie: TS01a3d6e7=abc; Path=/",
+            "Set-Cookie: brks_lb=!xyz==",
+        ])
+        out = http_get("127.0.0.1", srv.port, "/", 5.0)
+        assert len(out["set-cookie-list"]) == 2
+        assert out["set-cookie-list"][0].startswith("TS01a3d6e7=")
+
+
+class TestVerifyBlock:
+    def test_fortiweb_block(self, tls_server):
+        body = b"x" * 38000 + b"<html><head><title>The URL you requested has been blocked</title></head></html>"
+        srv = tls_server(status="HTTP/1.1 500 Internal Server Error", body=body)
+        got = verify_block("127.0.0.1", srv.port, 5.0)
+        assert got and got["vendor"] == "fortiweb"
+
+    def test_fortiweb_id_block(self, tls_server):
+        srv = tls_server(status="HTTP/1.1 500 Internal Server Error",
+                         body=b"<html><head><title>The URL Request Tidak Tersedia</title></head></html>")
+        got = verify_block("127.0.0.1", srv.port, 5.0)
+        assert got and got["vendor"] == "fortiweb"
+
+    def test_f5_asm_block(self, tls_server):
+        srv = tls_server(status="HTTP/1.1 200 OK",
+                         body=b"<html><head><title>Request Rejected</title></head></html>")
+        got = verify_block("127.0.0.1", srv.port, 5.0)
+        assert got and got["vendor"] == "f5-asm"
+
+    def test_plain_page_no_match(self, tls_server):
+        srv = tls_server(status="HTTP/1.1 200 OK",
+                         body=b"<html><head><title>Welcome</title></head></html>")
+        assert verify_block("127.0.0.1", srv.port, 5.0) is None
+
+    def test_connection_refused_no_crash(self):
+        import socket
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        assert verify_block("127.0.0.1", port, 2.0) is None
+
+
+class TestProbeOne:
+    def test_full_probe_with_fortiweb_server(self, tls_server):
+        body = b"<html><head><title>The URL you requested has been blocked</title></head></html>"
+        srv = tls_server(status="HTTP/1.1 500 Internal Server Error",
+                         headers=["Server: nginx"], body=body)
+        out = probe_one(f"127.0.0.1:{srv.port}", "/", 5.0, do_http=True, verify=True)
+        assert out["error"] is None
+        assert out["tls"]["http"]["headers"]["server"] == "nginx"
+        assert [m["vendor"] for m in out["verdict"]] == ["nginx"]
+        assert out["block"] and out["block"]["vendor"] == "fortiweb"
+
+    def test_dns_failure(self):
+        out = probe_one("nonexistent.invalid", "/", 2.0, do_http=False)
+        assert out["error"] in ("DNS did not resolve", None) or out["resolved"]["ips"] == []
