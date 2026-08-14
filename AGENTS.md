@@ -69,6 +69,14 @@ the tool and its documentation.
 5. **Multiple `Set-Cookie` headers.** Header parsing must collect cookies into
    a list (`set-cookie-list`), not overwrite — WAF signatures often live in
    the second cookie.
+6. **The HTTP layer lives under `result['tls']['http']`, not the top level.**
+   `probe_one` stores the whole TLS dict; a `fingerprint()` that reads
+   `result.get('http')` silently disables ALL header/cookie matching while
+   DNS/cert/netblock verdicts still work — so hosts behind cookie-only
+   vendors (F5 BIG-IP ASM's `TS<hex>` JavaScript-challenge cookie) report
+   "unknown edge" and look WAF-free. This bug shipped once and made a whole
+   fleet look unprotected. F5 detection needs the `TS[a-fA-F0-9]{6,12}=`
+   cookie (6–12 hex chars; shorter patterns miss the 10-char builds).
 
 ## Verification
 
