@@ -5,6 +5,21 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.27] — 2026-08-14
+
+Public Python API — fingerprint a host without the CLI.
+
+- **`w4f.fingerprint_host(host, port=443, timeout=8, verify=False, path="/",
+  no_http=False, ws_path=None, grpc=False, **kwargs)`** — runs the same
+  probe the CLI runs (reuses `scanner.probe_one`, no duplicated
+  handshake/HTTP logic) and returns the same per-host dict the `--json`
+  output contains. Errors are a field, never an exception.
+- Exported from `w4f/__init__.py` (`__all__ = ["fingerprint_host"]`) with a
+  short docstring; extra kwargs accepted and ignored for forward compat.
+- README "Library use" section with a 5-line example.
+- +4 tests (208 total) against the local TLS fixture: JSON-shape keys,
+  verify→block, no_http, error-as-field.
+
 ## [0.1.26] — 2026-08-14
 
 Per-vendor verdict colors + README/docs refresh.

@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.26
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.27
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -138,6 +138,25 @@ w4f --help           # full usage
 pipx uninstall w4f   # or: uv tool uninstall w4f / pip uninstall w4f
 ```
 
+## Library use
+
+The same engine the CLI drives is exposed as a plain Python function —
+useful for scheduling, scripting, or building your own sweep tooling:
+
+```python
+from w4f import fingerprint_host
+
+r = fingerprint_host("api.example.com", verify=True)
+print(r["verdict"][0]["vendor"], r["verdict"][0]["confidence"])  # cloudflare 65
+print(r["block"]["vendor"] if r["block"] else "no WAF block")    # needs verify=True
+```
+
+Returns the same per-host dict the CLI's `--json` output contains (`host`,
+`hostport`, `port`, `resolved`, `tls`, `verdict`, `block`, `error`). Accepts
+`port`, `timeout`, `path`, `no_http`, `verify`, `ws_path`, `grpc` — the CLI
+flag equivalents. Errors are a field, never an exception: a host that fails
+DNS comes back with `error` set and `verdict == []`.
+
 ## Usage
 
 ```bash
@@ -243,7 +262,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.26
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.27
 
 api.example.com:443
 ip        45.60.16.239

@@ -144,6 +144,48 @@ class TestProbeOne:
         assert out["error"] in ("DNS did not resolve", None) or out["resolved"]["ips"] == []
 
 
+class TestPublicApi:
+    """w4f.fingerprint_host: the --json dict shape, without the CLI."""
+
+    def test_fingerprint_host_returns_json_shape(self, tls_server):
+        from w4f import fingerprint_host
+        srv = tls_server(status="HTTP/1.1 404 Not Found",
+                         headers=["Server: nginx/1.24.0"], body=b"nope")
+        out = fingerprint_host("127.0.0.1", port=srv.port, timeout=5.0)
+        # same top-level keys the CLI's --json output has per host
+        assert out["host"] == "127.0.0.1"
+        assert out["hostport"] == f"127.0.0.1:{srv.port}"
+        assert out["port"] == srv.port
+        assert out["resolved"] is not None
+        assert out["tls"] is not None
+        assert out["tls"]["http"]["headers"]["server"] == "nginx/1.24.0"
+        assert isinstance(out["verdict"], list)
+        assert out["verdict"][0]["vendor"] == "nginx"
+        assert "confidence" in out["verdict"][0]
+        assert out.get("error") is None
+
+    def test_fingerprint_host_verify_reports_block(self, tls_server):
+        from w4f import fingerprint_host
+        body = b"<html><head><title>The URL you requested has been blocked</title></head></html>"
+        srv = tls_server(status="HTTP/1.1 500 Internal Server Error",
+                         headers=["Server: nginx"], body=body)
+        out = fingerprint_host("127.0.0.1", port=srv.port, timeout=5.0, verify=True)
+        assert out["block"] and out["block"]["vendor"] == "fortiweb"
+
+    def test_fingerprint_host_no_http(self, tls_server):
+        from w4f import fingerprint_host
+        srv = tls_server()
+        out = fingerprint_host("127.0.0.1", port=srv.port, timeout=5.0, no_http=True)
+        assert out["tls"]["tls_version"] in ("TLSv1.2", "TLSv1.3")
+        assert out["tls"].get("http") is None
+
+    def test_fingerprint_host_error_is_field_not_exception(self):
+        from w4f import fingerprint_host
+        out = fingerprint_host("nonexistent.invalid", timeout=2.0, no_http=True)
+        assert out["error"] is not None
+        assert out["verdict"] == []
+
+
 class TestWsGrpcProbes:
     def test_ws_upgrade_101(self, tls_server):
         from w4f.scanner import ws_probe
