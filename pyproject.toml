@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ether-w4f-scanner"
+name = "w4f"
 version = "0.1.7"
 description = "Passive TLS / CDN / WAF / edge fingerprinting of API endpoints"
 readme = "README.md"

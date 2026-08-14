@@ -1,4 +1,4 @@
-"""Vendor signature table for ether-w4f-scanner.
+"""Vendor signature table for w4f.
 
 Each vendor entry maps signature *kinds* to patterns:
 
