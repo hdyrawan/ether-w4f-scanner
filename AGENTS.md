@@ -68,9 +68,12 @@ the tool and its documentation.
   trusted publisher for hdyrawan/w4f (workflow name must stay `publish.yml`,
   no environment). To release: bump `__version__` in `w4f/__init__.py` AND
   `pyproject.toml` (setup.py reads from `__init__`, so only those two),
-  update the README banner version, `python -m build` + `twine check`, run
-  the tests, commit, then `git tag v<version> && git push origin v<version>`
-  — the workflow builds, tests, and publishes via OIDC (no token).
+  update the README banner version, add the CHANGELOG.md entry, `python -m
+  build` + `twine check`, run the tests, commit, then
+  `git tag v<version> && git push origin v<version>` — the workflow builds,
+  tests, and publishes via OIDC (no token). Then create the GitHub Release
+  (`gh release create v<version> --title ... --notes ...` from the CHANGELOG
+  entry) so the releases page matches PyPI.
 - **Pure stdlib + two optional deps.** `cryptography` (cert parsing) and
   `dnspython` (CNAME/PTR) are optional; the scanner must degrade gracefully
   without either. Never add a hard dependency.
