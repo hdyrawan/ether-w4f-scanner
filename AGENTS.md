@@ -36,8 +36,11 @@ the tool and its documentation.
 ## Conventions
 
 - **CLI contract:** the entry point is `w4f --target host[:port]`. The
-  `--target` flag is repeatable. Keep the flag names stable — other repos and
-  docs reference them.
+  `--target` flag is repeatable, and `--target-json FILE` accepts a
+  subdomain-enumeration export (array of `{"subdomain","ip","cloudflare"}`
+  objects, array of strings, or `{subdomains:[...]}`) — each subdomain is
+  scanned like a `--target`. At least one of the two is required; combine
+  freely. Keep the flag names stable — other repos and docs reference them.
 - **Pure stdlib + two optional deps.** `cryptography` (cert parsing) and
   `dnspython` (CNAME/PTR) are optional; the scanner must degrade gracefully
   without either. Never add a hard dependency.
