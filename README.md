@@ -17,6 +17,8 @@
 [![python](https://img.shields.io/badge/python-3.10--3.12-blue)](https://pypi.org/project/w4f/)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+[Release notes → CHANGELOG.md](CHANGELOG.md)
+
 Passive **TLS / CDN / WAF / edge fingerprinting** for API endpoints. For any
 `host[:port]` it walks the standard client path — DNS (A/AAAA/CNAME/PTR), one
 SNI TLS handshake, one GET — and matches the collected signals (response
