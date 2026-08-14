@@ -191,7 +191,7 @@ with `w` in red and `f` in blue. It prints on every non-quiet run, on
 ### Example output
 
 ```bash
-$ w4f --target mapi.welab.bank --target api.seabank.co.id --timeout 6
+$ w4f --target api.example.com --target shop.example.net --timeout 6
 ```
 
 ```
@@ -205,25 +205,25 @@ $ w4f --target mapi.welab.bank --target api.seabank.co.id --timeout 6
    ░░░░ ░░░░          ░░░░░   ░░░░░
   passive TLS / CDN / WAF / edge fingerprinting   v0.1.10
 
-api.seabank.co.id:443
+api.example.com:443
 ip        45.60.16.239
-cname     wj5u3uw.ng.impervadns.net
+cname     api.example.com.impervadns.net
 tls       TLSv1.3  TLS_AES_128_GCM_SHA256  ALPN h2
 mtls      server wants a CLIENT certificate
-cert      SSL Corporation
-  san     api.seabank.co.id, www.api.seabank.co.id
+cert      Example Security CA
+  san     api.example.com, www.api.example.com
   valid   2025-12-02 -> 2026-12-27  (134d left)
   spki    6905ab38dc27d7d6562fdbfd26cedf1238783b1ef25c76fd47245a695b3b11df
   key     RSA 2048  sha256WithRSAEncryption
 http      ERROR: [SSL: TLSV13_ALERT_CERTIFICATE_REQUIRED] tlsv13 alert certificate required
-verdict   imperva (2): cname: wj5u3uw.ng.impervadns.net; netblock: 45.60.16.239 in 45.60.0.0/16
+verdict   imperva (2): cname: api.example.com.impervadns.net; netblock: 45.60.16.239 in 45.60.0.0/16
 
-mapi.welab.bank:443
+shop.example.net:443
 ip        104.18.1.79, 104.18.0.79, 2606:4700::6812:4f, 2606:4700::6812:14f
-cname     mapi.welab.bank.cdn.cloudflare.net
+cname     shop.example.net.cdn.cloudflare.net
 tls       TLSv1.3  TLS_AES_256_GCM_SHA384  ALPN h2
-cert      GoDaddy.com, Inc.
-  san     mapi.welab.bank, www.mapi.welab.bank
+cert      Example CA, Inc.
+  san     shop.example.net, www.shop.example.net
   valid   2026-05-27 -> 2026-12-11  (118d left)
   spki    343d1536f3666f92ea868d751d138dd8658d3020426b4de28801cb259f5bdde7
   key     RSA 2048  sha256WithRSAEncryption
@@ -232,9 +232,12 @@ http      HTTP/1.1 404 Not Found
   hdr     cf-cache-status=DYNAMIC
   hdr     cf-ray=a2af62ede853e78f-CGK
 verdict   cloudflare (7): header server: cloudflare; header cf-ray: ...;
-          cookie: _cfuvid=...; cname: mapi.welab.bank.cdn.cloudflare.net;
+          cookie: _cfuvid=...; cname: shop.example.net.cdn.cloudflare.net;
           netblock: 104.18.1.79 in 104.16.0.0/13; netblock: 2606:4700::6812:4f in ...
 ```
+
+(The hosts above are illustrative — run it against any real host to see your
+own output.)
 
 Colors are enabled automatically when stdout is a TTY — host in cyan, vendor
 verdict in green, mTLS/errors in red, `--verify` block findings in yellow.
