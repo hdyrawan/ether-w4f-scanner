@@ -105,7 +105,11 @@ field) so a single weak signal can never fire a composite rule — e.g.
   behind them set it to their own stack (nginx, Apache, …). A `server`
   match is never high-confidence alone.
 - `via` — proxies/gateways append themselves. `via: 1.1 varnish` (Varnish),
-  `via: …cloudfront.net` (CloudFront), `via: ens-cache…` (NetScaler).
+  `via: …cloudfront.net` (CloudFront), `via: …uproxy-N` (Wangsu global LB),
+  `via: …bdcdn-…` (Baidu CDN). NetScaler is `ns-cache` — note the
+  word boundary: **`ens-cache` (Alibaba/NetEase edge nodes) is NOT
+  NetScaler**; a bare `ns-cache` substring regex ships a false verdict on
+  every major Alibaba/NetEase-fronted host.
 - `x-cache` — cache result line. CloudFront uses `Hit from cloudfront` /
   `Miss from cloudfront` / **`Error from cloudfront`** (the WAF-block
   marker). Fastly/CDN77 use their own tokens.
@@ -150,6 +154,34 @@ field) so a single weak signal can never fire a composite rule — e.g.
 - `HWWAFSESID=` (Huawei Cloud WAF), `FORTIWAFSID=` (FortiWeb),
   `__ddg` (DDoS-Guard).
 
+### Chinese CDN / WAF signals (v0.1.29 — China sweep)
+
+Headers:
+
+- `x-via-jsl` — **Jiasule (加速乐)** WAF/CDN edge; almost always paired with
+  the `__jsluid_s` visitor cookie and a lowercase `X-Cache: bypass`.
+- `server: panyun` — **360 PanYun (盘云)** edge (customers CNAME to
+  `*.360panyun.com`).
+- `server: wswaf` — **Wangsu WAF** product token (网宿WAF), seen on hosts
+  that also carry Wangsu CDN markers (banking and media hosts).
+- `server: bfe` — **Baidu Front End** (baidu.com properties). The GET path
+  can echo the origin BFF's `apache`/`nginx` instead, so the `shifen.com`
+  CNAME is the reliable signal.
+- `server: volc-dcdn` — **Volcengine DCDN** edge.
+- `x-bdcdn-cache-status` / `via: …bdcdn-…` — **Baidu Cloud CDN**.
+- `x-ccdn-*` prefix + `x-hcs-proxy-type` — **Huawei Cloud CDN** cache nodes.
+- `eagleeye-traceid` — Alibaba observability trace header (Alibaba's own
+  properties and ESA-fronted services).
+- `x-ser: i<num>_c<num>` / `X-Cache: …(cloudsvr)` — shared Chinese gov-CDN
+  platform markers; **not** a vendor signal on their own.
+
+Cookies:
+
+- `__jsluid_s=` — Jiasule visitor cookie.
+- `acw_tc=` / `cdn_sec_tc=` / `aliyungf_tc=` — **Alibaba Cloud ESA WAF**
+  cookies (per Alibaba's own ESA documentation, inserted for CC-protection
+  and client tracking).
+
 ### Certificate issuer
 
 The CA name in the leaf cert. `cert: Cloudflare, Inc.` is Cloudflare (they
@@ -164,6 +196,33 @@ A deliberate delegation. `.cdn.cloudflare.net`, `*.akamaized.net`,
 `*.fastly.net`, `*.azure-api.net`, `*.eo.dnse4.com` (Tencent EdgeOne),
 `*.dnsv1.com.cn` (Tencent Cloud CDN). A CNAME to `*.akamaized.net` is
 Akamai — and **not** ByteDance (akamaized is Akamai-exclusive).
+
+Chinese CDN CNAME suffixes are the strongest signal for that market — the
+edges are DNS-steered and the response headers are often shared across
+platforms (see the shared-platform markers below):
+
+| suffix | vendor |
+|---|---|
+| `*.wscdns.com` / `*.wscvip.cn` / `*.wswebpic.com` / `*.wsglb0.com` | Wangsu (网宿) |
+| `*.lxdns.com` | ChinaCache (蓝汛) |
+| `*.tbcache.com` / `*.alicdn.com` / `*.kunlun*.com` | Alibaba CDN (昆仑) |
+| `*.vip.jiasule.org` | Jiasule (加速乐) |
+| `*.cname.365cyd.cn` | Knownsec Chuang Yu Shield (创宇盾) |
+| `*.360panyun.com` | 360 PanYun (盘云) |
+| `*.bsgslb.cn` / `*.bsclink.cn` | Baishan Cloud (白山云) |
+| `*.qiniudns.com` / `*.qiniucdn.com` | Qiniu (七牛云) |
+| `*.c.cdnhwc<nn>.com` | Huawei Cloud CDN |
+| `*.163jiasu.com` | NetEase CDN (网易加速) |
+| `*.vedcdnlb.com` | Volcengine DCDN |
+| `*.bytedns1.com` | ByteDance |
+| `*.a.shifen.com` (shifen.com) | Baidu BFE (Baidu's own front end) |
+
+**Shared platform markers (do NOT key rules on them alone):**
+`Via: …(Cdn Cache Server V2.0)` is emitted by BOTH Wangsu and ChinaCache;
+`X-Ser: i<num>_c<num>` / `X-Cache: …(cloudsvr)` appear on several Chinese
+gov-CDN platforms (Baishan, and others); `ens-cache` via nodes are used by
+both Alibaba and NetEase CDN. Each needs a corroborating CNAME or a
+vendor-specific header before it means anything.
 
 ### PTR / reverse DNS
 
@@ -206,18 +265,18 @@ default green:
 
 | color | vendors |
 |---|---|
-| bright yellow | Cloudflare, Cloudflare WAF, FortiWeb |
-| blue | Akamai |
-| red | Fastly (+ WAF) |
-| cyan | AWS family (CloudFront/WAF/ELB/…) |
-| bright blue | Azure family (Front Door/AppGW/…) |
-| bright magenta | Tencent family, Vercel, Squarespace |
+| bright yellow | Cloudflare, Cloudflare WAF, FortiWeb, Jiasule, 360 PanYun |
+| blue | Akamai, Baidu BFE, Baidu CDN |
+| red | Fastly (+ WAF), Alibaba CDN |
+| cyan | AWS family (CloudFront/WAF/ELB/…), ChinaCache |
+| bright blue | Azure family (Front Door/AppGW/…), Wangsu, Huawei Cloud CDN |
+| bright magenta | Tencent family, Vercel, Squarespace, Volcengine |
 | magenta | Google GFE, GCP Armor |
 | bright red | F5, NetScaler, WSO2 |
-| bright cyan | Kong |
-| yellow | Imperva |
+| bright cyan | Kong, Knownsec |
+| yellow | Imperva, Wangsu WAF (wswaf) |
 | dim | plain origins (nginx, Apache, IIS, Varnish, Envoy, HAProxy, …) |
-| green | everything else (default) |
+| green | everything else (default: Sucuri, Baishan, NetEase, Qiniu, …) |
 
 Plain origin stacks are deliberately **dimmed** so the edge-vs-origin
 distinction is visible at a glance. A new vendor gets green by default; add

@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.28
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.29
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -262,7 +262,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.28
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.29
 
 api.example.com:443
 ip        45.60.16.239
@@ -384,19 +384,22 @@ serves plain nginx to normal requests). See
 
 ### Signature coverage
 
-**71 vendors** across six families — each one a file under
+**85 vendors** across six families — each one a file under
 `w4f/signatures/` (copy `_template.py` to add one; see
 [`docs/vendor-signatures.md`](docs/vendor-signatures.md) for the
 contributor guide):
 
-- **CDN/edge** (24): Cloudflare, Cloudflare WAF, Imperva, Akamai (incl.
+- **CDN/edge** (35): Cloudflare, Cloudflare WAF, Imperva, Akamai (incl.
   Kona + Bot Manager `E3D=`), AWS CloudFront / WAF / ELB / Global
   Accelerator / S3 / EC2, Fastly (+ WAF/Signal Sciences), Azure Front Door,
   Azure App Gateway, ArvanCloud, Tencent EdgeOne / CDN, Baidu Yunjiasu,
-  Edgecast, MaxCDN, KeyCDN, StackPath, Zenedge, DDoS-Guard.
-- **WAF/protection** (16): FortiWeb, F5 BIG-IP ASM, NetScaler, GTM/GSLB,
+  Baidu BFE, Baidu CDN, Alibaba CDN, Wangsu, ChinaCache, Huawei Cloud CDN,
+  Volcengine DCDN, ByteDance, 360 PanYun, Baishan, NetEase CDN,
+  Qiniu, Edgecast, MaxCDN, KeyCDN, StackPath, Zenedge, DDoS-Guard.
+- **WAF/protection** (19): FortiWeb, F5 BIG-IP ASM, NetScaler, GTM/GSLB,
   Sucuri, ModSecurity, NAXSI, Wallarm, Wordfence, Zscaler, Google Cloud
-  Armor, Radware, Reblaze, Barracuda, Huawei Cloud WAF, SafeDog.
+  Armor, Radware, Reblaze, Barracuda, Huawei Cloud WAF, SafeDog, Jiasule,
+  Wangsu WAF (wswaf), Knownsec Chuang Yu Shield.
 - **Bot management** (5): DataDome, PerimeterX/HUMAN, Kasada, Shape
   Security, Arkose.
 - **API gateways / platform edges** (15): Kong, Tyk, Apigee, Azure API

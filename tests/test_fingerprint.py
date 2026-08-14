@@ -415,3 +415,166 @@ class TestSignalCounting:
         r = _result(cookies=["TS01538524=012b5961782784783de7052afa3b4817"])
         ver = fingerprint(r)
         assert any("cookie: TS" in e for m in ver for e in m["evidence"])
+
+
+class TestChineseEdges:
+    """Positive + negative cases for the Chinese CDN/WAF vendors added from
+    the 2026-08-14 internet-wide + China sweep (v0.1.29)."""
+
+    def test_jiasule_x_via_jsl(self):
+        r = _result(headers={"x-via-jsl": "0fedc55,-", "x-cache": "bypass"})
+        assert "jiasule" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_jiasule_cookie(self):
+        r = _result(cookies=["__jsluid_s=54c8295839ec594de6117d89652ab6fc; path=/"])
+        assert "jiasule" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_jiasule_cname(self):
+        r = _result(cname=["edge.vip.jiasule.org"])
+        assert "jiasule" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_wswaf_server(self):
+        r = _result(headers={"server": "wswaf"})
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "wswaf" in names
+        assert "nginx" not in names
+
+    def test_knownsec_cname(self):
+        r = _result(cname=["host.cname.365cyd.cn"])
+        assert "knownsec" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_wangsu_cname(self):
+        r = _result(cname=["host.example.com.wscdns.com"])
+        assert "wangsu" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_wangsu_uproxy_via(self):
+        r = _result(headers={"via": "1.1 ID-17166357503 uproxy-21"})
+        assert "wangsu" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_wangsu_does_not_fire_on_chinacache(self):
+        # ChinaCache hosts share the (Cdn Cache Server V2.0) via marker but
+        # CNAME to lxdns.com — the CNAME must decide, not the shared marker.
+        r = _result(
+            cname=["host.example.com.lxdns.com"],
+            headers={"x-via": "1.1 PS-CGK-04VSI108:34 (Cdn Cache Server V2.0)"},
+        )
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "chinacache" in names
+        assert "wangsu" not in names
+
+    def test_chinacache_cname(self):
+        r = _result(cname=["cdn.example.com.lxdns.com"])
+        assert "chinacache" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_aliyun_cname(self):
+        r = _result(cname=["host.example.com.tbcache.com"])
+        assert "aliyun" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_aliyun_kunlun_cname(self):
+        # kunlun*.com = Alibaba CDN (昆仑) — www.gold678.com.w.kunlunca.com
+        r = _result(cname=["cdn.example.com.w.kunlunca.com"])
+        assert "aliyun" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_360panyun_server(self):
+        r = _result(headers={"server": "panyun"})
+        assert "360panyun" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_360panyun_cname(self):
+        r = _result(cname=["edge.360panyun.com"])
+        assert "360panyun" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_aliyun_esa_cookie(self):
+        r = _result(cookies=["acw_tc=a3b59eaf...;path=/;HttpOnly"])
+        assert "aliyun" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_aliyun_yunfeng_cookie(self):
+        # aliyungf_tc = Alibaba Cloud WAF (云盾) visitor cookie
+        r = _result(cookies=["aliyungf_tc=f8dc0669d0cd8e6e4a6abd5ca155b193e11b2af1aec0a4ca9bcc35a36075e8b6; Path=/; HttpOnly"])
+        assert "aliyun" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_aliyun_eagleeye_header(self):
+        r = _result(headers={"eagleeye-traceid": "2100c81c17867323955146733ed0b1"})
+        assert "aliyun" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_aliyun_does_not_fire_on_netease(self):
+        # NetEase's CDN also emits the ens-cache via marker — cname is the
+        # distinguishing signal, not the via string.
+        r = _result(
+            cname=["www.example.com.163jiasu.com"],
+            headers={"server": "Tengine", "via": "ens-cache9.id62[,403011]"},
+        )
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "netease" in names
+        assert "aliyun" not in names
+
+    def test_netscaler_does_not_fire_on_ens_cache(self):
+        # ens-cache (Alibaba/NetEase edge) must NOT match the netscaler
+        # ns-cache via regex — a substring match shipped a false verdict on
+        # major Alibaba/NetEase-fronted sites.
+        r = _result(
+            headers={"server": "Tengine",
+                     "via": "ens-cache15.l2id3[0,0,304-0,H], ens-cache12.l2id3[1,0]"},
+        )
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "netscaler" not in names
+
+    def test_volcengine_server(self):
+        r = _result(headers={"server": "volc-dcdn", "age": "31"})
+        assert "volcengine" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_volcengine_vedcdnlb_cname(self):
+        r = _result(cname=["cdn.example.com.c.vedcdnlb.com"])
+        assert "volcengine" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_qiniu_cname(self):
+        r = _result(cname=["cdn.example.com.qiniudns.com"])
+        assert "qiniu" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_huawei_cloud_cdn_cname(self):
+        r = _result(cname=["cdn.example.com.c.cdnhwc1.com"])
+        assert "huawei-cloud-cdn" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_huawei_cloud_cdn_headers(self):
+        r = _result(headers={"x-ccdn-expires": "58", "x-hcs-proxy-type": "1"})
+        assert "huawei-cloud-cdn" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_baidu_cdn_header(self):
+        r = _result(headers={"x-bdcdn-cache-status": "TCP_MISS,TCP_MISS"})
+        assert "baidu-cdn" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_baidu_cdn_via(self):
+        r = _result(headers={"via": "n62-196-017.bdcdn-CN-HK-HKG3.ToB"})
+        assert "baidu-cdn" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_baidu_bfe_server(self):
+        r = _result(headers={"server": "bfe/1.0.8.18"})
+        assert "baidu-bfe" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_baidu_bfe_cname(self):
+        r = _result(cname=["host.a.shifen.com"])
+        assert "baidu-bfe" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_baidu_bfe_does_not_fire_on_origin_apache(self):
+        # A Baidu property GET can echo the search BFF's `apache` — that is
+        # the origin layer, not the edge; no shifen CNAME means no bfe verdict.
+        r = _result(headers={"server": "apache", "x-hit-search-bff": "1"})
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "baidu-bfe" not in names
+        assert "apache" in names
+
+    def test_baishan_cname(self):
+        r = _result(cname=["www.example.com.bsgslb.cn"])
+        assert "baishan" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_netease_cname(self):
+        r = _result(cname=["www.example.com.163jiasu.com"])
+        assert "netease" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_bytedance_bytedns1_cname(self):
+        r = _result(cname=["www.example.com.bytedns1.com"])
+        assert "bytedance" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_plain_nginx_fires_no_new_vendors(self):
+        r = _result(headers={"server": "nginx/1.24.0"})
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert names == ["nginx"]

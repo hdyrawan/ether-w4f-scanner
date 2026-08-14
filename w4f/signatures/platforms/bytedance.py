@@ -5,4 +5,4 @@ VENDOR = {'name': 'bytedance',
              'x-tt-logid': None,
              'x-tt-trace-id': None,
              'x-bytefaas-request-id': None},
- 'cname': 'bytecdn|byteimg|byteacctimg|tikcdn|tiktokcdn'}
+ 'cname': 'bytecdn|byteimg|byteacctimg|tikcdn|tiktokcdn|bytedns1'}

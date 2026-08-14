@@ -5,6 +5,48 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.29] — 2026-08-14
+
+China + internet-wide signature sweep — **14 new vendors (71 → 85)** and one
+false-positive fix, all mined from a live sweep corpus (global top-2000 +
+~500 curated Chinese sites; evidence lives in the private sweep workspace,
+only rules go in the repo).
+
+New vendors:
+
+- **CDN (11):** `wangsu` (wscdns.com/wscvip.cn/wswebpic.com/wsglb0.com
+  CNAMEs + `uproxy` via), `chinacache` (lxdns.com CNAME), `aliyun`
+  (tbcache.com / alicdn.com / kunlun*.com CNAMEs + `acw_tc`/`cdn_sec_tc`/
+  `aliyungf_tc` ESA WAF cookies + `eagleeye-traceid`), `volcengine`
+  (`server: volc-dcdn` + vedcdnlb.com CNAME), `baidu-bfe` (`server: bfe` +
+  shifen.com CNAME — Baidu's own front end), `baidu-cdn`
+  (`x-bdcdn-cache-status` + `bdcdn` via), `baishan` (bsgslb.cn/bsclink.cn
+  CNAME), `netease` (163jiasu.com CNAME), `qiniu` (qiniudns.com CNAME),
+  `huawei-cloud-cdn` (cdnhwc*.com CNAME + `x-ccdn-*` headers),
+  `360panyun` (`server: panyun` + 360panyun.com CNAME).
+- **WAF (3):** `jiasule` (`x-via-jsl` header + `__jsluid_s` cookie),
+  `wswaf` (`server: wswaf` — Wangsu WAF product), `knownsec` (365cyd.cn
+  CNAME — Chuang Yu Shield).
+- **Extended:** bytedance cname + `bytedns1.com` (ByteDance properties).
+
+FP fix: **netscaler `via: ns-cache` matched `ens-cache`** (Alibaba/NetEase
+edge nodes) — a bare substring regex shipped a false netscaler verdict on
+major Alibaba/NetEase-fronted sites. The regex is now `\bns-cache` with a
+dedicated negative test.
+
+Attribution notes recorded in `docs/vendor-signatures.md`: the
+`(Cdn Cache Server V2.0)` via marker is shared by Wangsu AND ChinaCache;
+`ens-cache` by Alibaba AND NetEase; `x-ser`/`(cloudsvr)` by several Chinese
+gov-CDN platforms — none is usable as a standalone signal. Alibaba ESA WAF
+cookies cited to Alibaba's own documentation. Oracle cross-check results
+are validated by hand; the oracle's "Huawei Cloud Firewall" on a payment
+provider's marketing site was a false positive (host is Alibaba —
+`aliyungf_tc` cookie + Alibaba IPs).
+
+- 14 vendor files under `w4f/signatures/{cdn,waf}/`, colors for each in
+  `w4f/report.py`, README coverage list 71 → 85.
+- +25 tests (263 total), each new rule has positive + negative cases.
+
 ## [0.1.28] — 2026-08-14
 
 New vendor: **wso2** (API Manager / Carbon gateway).
