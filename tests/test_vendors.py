@@ -102,8 +102,8 @@ class TestRegexSanity:
 class TestNewSignatures:
     """Rules added from the 2026-08-14 internet accuracy sweep."""
 
-    def _names(self, headers=None, cookies=None):
-        return [m["vendor"] for m in _fingerprint_result(headers=headers, cookies=cookies)]
+    def _names(self, headers=None, cookies=None, **kw):
+        return [m["vendor"] for m in _fingerprint_result(headers=headers, cookies=cookies, **kw)]
 
     def test_akamai_kona_akamai_ghost_server(self):
         # www.example.com / www.example-registrar.com / www.example.com / www.example.com 403s
@@ -137,6 +137,14 @@ class TestNewSignatures:
         assert "kong" in self._names(
             headers={"x-kong-upstream-latency": "8", "x-kong-proxy-latency": "1"})
         assert "kong" in self._names(headers={"server": "kong/3.4.1"})
+
+    def test_aws_global_accelerator(self):
+        # bank-example.com resolves to AWS Global Accelerator ranges
+        # (15.197.x / 3.33.x) with no elb.amazonaws.com CNAME.
+        assert "aws-global-accelerator" in self._names(
+            ips=["15.197.225.128", "3.33.251.168"])
+        assert "aws-global-accelerator" in self._names(ips=["3.33.251.168"])
+        assert "aws-global-accelerator" not in self._names(ips=["8.8.8.8"])
 
     def test_bytedance_tiktok(self):
         # TikTok: server TLB + x-tt-logid (ByteDance edge, not Akamai Kona)

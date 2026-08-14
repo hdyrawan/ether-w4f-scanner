@@ -90,6 +90,15 @@ VENDORS: dict[str, dict] = {
         "cname": r"elb\.amazonaws\.com",
         "ptr": r"compute\.amazonaws\.com",
     },
+    "aws-global-accelerator": {
+        # AWS Global Accelerator (GLOBALACCELERATOR ranges from
+        # ip-ranges.amazonaws.com). Serves an AWS edge without the
+        # elb.amazonaws.com CNAME; e.g. bank-example.com resolves to
+        # 15.197.x / 3.33.x, PTR *.awsglobalaccelerator.com, and 301s
+        # to corporate-portal.example.com from ip-*.eu-west-2.compute.internal.
+        "nets": ["15.197.0.0/16", "3.33.0.0/16"],
+        "ptr": r"awsglobalaccelerator\.com",
+    },
     "aws-s3": {
         "headers": {"server": r"amazons3", "x-amz-request-id": None},
         "cname": r"\.s3[.-].*\.amazonaws\.com",
