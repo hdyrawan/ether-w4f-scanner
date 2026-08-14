@@ -278,22 +278,22 @@ Vendor names are matched with weights: a host behind nginx directly gets
 resolves to Global Accelerator ranges (`15.197.0.0/16`, `3.33.0.0/16`,
 PTR `*.awsglobalaccelerator.com`) has no `elb.amazonaws.com` CNAME, so it
 fell through every AWS rule. Found via the Indonesian bank subdomain sweep
-(`bank-example.com` → 15.197.x/3.33.x, 301s to `corporate-portal.example.com`). Added
+(15.197.x/3.33.x, 301s to a corporate portal). Added
 `aws-global-accelerator` netblock + PTR rules.
 
 **v0.1.13 note — Kong API gateway detected.** `X-Kong-Upstream-Latency` /
-`X-Kong-Proxy-Latency` headers (and `Server: kong` on older builds), seen on
-example-ride.com. Added `kong` vendor rule.
+`X-Kong-Proxy-Latency` headers (and `Server: kong` on older builds). Added
+`kong` vendor rule.
 
 **v0.1.12 note — AWS WAF on CloudFront is now detected.** Indonesian-ecosystem
 hunt (user-led: example-hospital.com) found CloudFront + **AWS WAF managed
 rules** silently blocking attack-shaped queries with `403` +
 `x-cache: Error from cloudfront` + the block page "ERROR: The request could
-not be satisfied / Request blocked" — the same edge as bank-example.co.id. Passive
+not be satisfied / Request blocked". Passive
 scan sees only `aws-cloudfront` (a normal GET returns 200); `--verify` now
 matches the AWS WAF block page (`aws-waf`), and the passive `aws-waf` rule
 fires on the 403 + error-cache shape via a new `_status` pseudo-header.
-Confirmed deployments: example-hospital.com, bank-example.co.id, example.com,
+Confirmed deployments: example-hospital.com, a bank's API host, example.com,
 example-travel.com. **Do not write "CloudFront, no WAF" for a host without a
 `--verify` run** — AWS WAF is silent to passive probes, same trap as FortiWeb.
 

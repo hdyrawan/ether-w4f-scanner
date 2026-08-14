@@ -27,8 +27,9 @@ bucket. Verified live against the hosts that exposed them.
   `elb.amazonaws.com` CNAME, so every AWS rule missed it. Detected via
   `15.197.0.0/16` + `3.33.0.0/16` netblocks (GLOBALACCELERATOR ranges from
   ip-ranges.amazonaws.com) and PTR `*.awsglobalaccelerator.com`.
-  Found live: `bank-example.com` → 15.197.x/3.33.x, 301s to corporate-portal.example.com from
-  `ip-*.eu-west-2.compute.internal`; the oracle called it "AWS ELB".
+  Found live on an Indonesian bank's public website: 15.197.x/3.33.x,
+  301s to the corporate portal from `ip-*.eu-west-2.compute.internal`;
+  the oracle called it "AWS ELB".
 - Tests: 91 passing.
 
 ## [0.1.13] — 2026-08-14 (code milestone; tagged with 0.1.14)
@@ -48,8 +49,8 @@ bucket. Verified live against the hosts that exposed them.
   - `--verify` matches the AWS WAF block page (`aws-waf`).
   - Passive `aws-waf` fires on the 403 + error-cache shape via a new
     `_status` pseudo-header.
-  - Confirmed deployments: example-hospital.com, bank-example.co.id, example.com,
-    example-travel.com.
+  - Confirmed deployments in the Indonesian ecosystem:
+    example-hospital.com, a bank's API host, example.com, example-travel.com.
 - Standing rule added: never write "CloudFront, no WAF" without a
   `w4f --verify` run.
 
