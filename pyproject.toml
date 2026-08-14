@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ether-w4f-scanner"
+version = "0.1.0"
+description = "Passive TLS / CDN / WAF / edge fingerprinting of API endpoints"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "hdyrawan" }]
+dependencies = []
+
+[project.optional-dependencies]
+full = ["cryptography", "dnspython"]
+
+[project.scripts]
+w4f = "w4f.cli:main"
+
+[tool.setuptools]
+packages = ["w4f"]
