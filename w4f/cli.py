@@ -75,6 +75,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="write markdown per-host blocks (for docs) to FILE")
     ap.add_argument("--no-http", action="store_true",
                     help="TLS/cert/DNS only, skip the HTTP request")
+    ap.add_argument("--version", action="version",
+                    version=f"%(prog)s {__version__} — {_TAGLINE}")
     ap.add_argument("--quiet", action="store_true",
                     help="suppress the per-host console block (useful with --json/--md)")
     return ap

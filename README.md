@@ -73,6 +73,7 @@ w4f --target host[:port] [--target host2[:port] ...] \
     --json          write the full machine-readable result tree to FILE
     --md            write markdown per-host blocks (for docs) to FILE
     --no-http       TLS/cert/DNS only, skip the HTTP request
+    --version       print version and exit
     --quiet         suppress the per-host console block (useful with --json/--md)
 ```
 
