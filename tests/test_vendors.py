@@ -146,6 +146,26 @@ class TestNewSignatures:
         assert "aws-global-accelerator" in self._names(ips=["3.33.251.168"])
         assert "aws-global-accelerator" not in self._names(ips=["8.8.8.8"])
 
+    def test_azure_frontdoor_config_nocache(self):
+        # EXAMPLE_BANK Atlassian intranet hosts: x-cache CONFIG_NOCACHE with
+        # hidden server header (Azure Front Door's cache-config marker).
+        assert "azure-frontdoor" in self._names(
+            headers={"x-cache": "CONFIG_NOCACHE"})
+        assert "azure-frontdoor" in self._names(
+            headers={"x-cache": "CONFIG_CACHE", "x-azure-ref": "ref"})
+
+    def test_sgw_shopee_gateway(self):
+        # EXAMPLE_BANK UAT/staging: Server: SGW (Shopee/Sea Group API gateway)
+        assert "sgw" in self._names(headers={"server": "SGW"})
+        assert "sgw" in self._names(headers={"server": "SGW/1.0"})
+        assert "sgw" not in self._names(headers={"server": "nginx"})
+
+    def test_iis_origin(self):
+        # mail/webmail/autodiscover hosts: plain Microsoft IIS origin
+        assert "iis" in self._names(headers={"server": "Microsoft-IIS/10.0"})
+        assert "iis" in self._names(headers={"server": "Microsoft-HTTPAPI/2.0"})
+        assert "iis" not in self._names(headers={"server": "nginx"})
+
     def test_bytedance_tiktok(self):
         # TikTok: server TLB + x-tt-logid (ByteDance edge, not Akamai Kona)
         assert "bytedance" in self._names(

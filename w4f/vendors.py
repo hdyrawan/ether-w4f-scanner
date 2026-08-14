@@ -117,12 +117,26 @@ VENDORS: dict[str, dict] = {
         "nets": ["151.101.0.0/16", "199.232.0.0/16", "146.75.0.0/16", "172.111.64.0/18"],
     },
     "azure-frontdoor": {
-        "headers": {"x-azure-ref": None, "server": r"azure-frontdoor|frontdoor"},
+        # CONFIG_NOCACHE x-cache value is Front Door's own cache config
+        # marker (seen on EXAMPLE_BANK's Atlassian intranet hosts with no
+        # x-azure-ref and a hidden server header).
+        "headers": {"x-azure-ref": None, "server": r"azure-frontdoor|frontdoor",
+                    "x-cache": r"CONFIG_NOCACHE|CONFIG_CACHE"},
         "cname": r"azurefd\.net",
         "ptr": r"azurefd\.net",
     },
     "azure-appgw": {
         "headers": {"server": r"microsoft-azure-application-gateway"},
+    },
+    "sgw": {
+        # Shopee/Sea Group API gateway — EXAMPLE_BANK's UAT/staging hosts serve
+        # `Server: SGW` (apm-uat1.uat.bank-example.co.id, notice.staging.bank-example.co.id, ...).
+        "headers": {"server": r"^SGW(?:/|$)"},
+    },
+    "iis": {
+        # Plain Microsoft IIS origin — not a WAF/CDN, but naming it beats
+        # "unknown" for mail/webmail/autodiscover hosts.
+        "headers": {"server": r"microsoft-iis|microsoft-httpapi"},
     },
     "google-gfe": {
         "headers": {"server": r"gws|gfe|esf", "alt-svc": r"h3"},
