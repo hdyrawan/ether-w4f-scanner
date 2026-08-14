@@ -15,6 +15,51 @@ from w4f.scanner import probe_one
 
 _TAGLINE = "passive TLS / CDN / WAF / edge fingerprinting"
 
+# Max hostname length per RFC 1035/1123 (253 chars) + port allowance.
+_MAX_HOST_LEN = 253
+
+
+def _is_private_ip(host: str) -> bool:
+    """True for RFC1918 / loopback / link-local / CGNAT / documentation IPs.
+
+    Scanning these is a legitimate use (private bank infrastructure,
+    loopback in tests), so this only WARNS — it never blocks. The caller
+    decides what to do with the warning.
+    """
+    try:
+        import ipaddress
+        ip = ipaddress.ip_address(host.split("%")[0])  # strip zone id
+    except ValueError:
+        return False
+    return (ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_reserved or ip.is_multicast)
+
+
+def _validate_hostport(hostport: str) -> tuple[bool, str]:
+    """Reject targets that cannot be legitimate scan input.
+
+    Returns (ok, message). A message with ok=True is a warning (kept);
+    ok=False means the target is dropped with the reason. Guards against
+    malicious --target-json input: control characters / newlines (log
+    injection, weird DNS), URI schemes (file:// etc.), and absurdly long
+    hostnames (DNS-lookup DoS).
+    """
+    h = hostport.strip()
+    if not h:
+        return False, "empty target"
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in h):
+        return False, "control character in target"
+    if "://" in h:
+        return False, "URI scheme not allowed (hostname only)"
+    host = h.split(":", 1)[0]
+    if len(host) > _MAX_HOST_LEN:
+        return False, f"hostname too long ({len(host)} > {_MAX_HOST_LEN})"
+    if any(c.isspace() for c in host):
+        return False, "whitespace in hostname"
+    if _is_private_ip(host):
+        return True, f"note: {host} is a private/internal address (scanning anyway)"
+    return True, ""
+
 
 def _load_targets_from_json(path: str) -> list[str]:
     """Read a subdomain-enumeration JSON file and return the host list.
@@ -92,6 +137,23 @@ def main(argv: list[str] | None = None) -> int:
     targets: list[str] = list(args.target or [])
     if args.target_json:
         targets += _load_targets_from_json(args.target_json)
+
+    # Input validation: drop anything that cannot be a legitimate hostname
+    # (control chars, URI schemes, overlong names) — a hostile --target-json
+    # file must not turn the scan into a DNS DoS or log-injection vector.
+    # Private IPs are warned, not dropped: scanning internal infrastructure
+    # is a legitimate use of this tool.
+    cleaned: list[str] = []
+    for t in targets:
+        ok, msg = _validate_hostport(t)
+        if not ok:
+            print(f"warning: dropping target {t!r}: {msg}", file=sys.stderr)
+            continue
+        if msg:
+            print(f"warning: {msg}", file=sys.stderr)
+        cleaned.append(t)
+    targets = cleaned
+
     if not targets:
         print("error: nothing to scan — pass --target HOST and/or --target-json FILE",
               file=sys.stderr)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime
 import ipaddress
+import os
 import socket
 import ssl
 import tempfile
@@ -71,12 +72,18 @@ class LocalTLSServer:
         self.headers = headers or []
         self.body = body
         cert_pem, key_pem = _make_cert_pem()
-        with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as cf:
-            cf.write(cert_pem)
-            self._cert_file = cf.name
-        with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as kf:
-            kf.write(key_pem)
-            self._key_file = kf.name
+        # TemporaryDirectory auto-cleans on close() / GC even if a test is
+        # interrupted (KeyboardInterrupt, pytest -k filter) — NamedTemporaryFile
+        # with delete=False would leak those files.
+        self._tmpdir = tempfile.TemporaryDirectory(prefix="w4f-test-")
+        cf = os.path.join(self._tmpdir.name, "cert.pem")
+        kf = os.path.join(self._tmpdir.name, "key.pem")
+        with open(cf, "wb") as f:
+            f.write(cert_pem)
+        with open(kf, "wb") as f:
+            f.write(key_pem)
+        self._cert_file = cf
+        self._key_file = kf
         self._ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self._ctx.load_cert_chain(self._cert_file, self._key_file)
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -113,11 +120,8 @@ class LocalTLSServer:
 
     def close(self):
         self._server_sock.close()
-        for f in (self._cert_file, self._key_file):
-            try:
-                __import__("os").unlink(f)
-            except Exception:
-                pass
+        # TemporaryDirectory removes cert.pem + key.pem + the dir itself.
+        self._tmpdir.cleanup()
 
 
 @pytest.fixture

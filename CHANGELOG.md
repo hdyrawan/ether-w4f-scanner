@@ -5,6 +5,31 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.17] — 2026-08-14
+
+Security-review batch (5 findings).
+
+- **Input validation on target hostnames** (MEDIUM). `--target` and
+  `--target-json` targets are validated at load: control characters
+  (newlines/NUL — log injection, weird DNS), URI schemes (`file://` etc.),
+  whitespace-in-hostname, and overlong names (>253 chars) are dropped with
+  a warning. **Private/internal IPs (10.x, 192.168.x, 127.x, 169.254.x)
+  are warned but NOT dropped** — scanning internal infrastructure is a
+  legitimate use. +9 tests (`TestHostportValidation`).
+- **Public-API unverified TLS context** (MEDIUM). Replaced the private
+  `ssl._create_unverified_context()` with `ssl.create_default_context()` +
+  `CERT_NONE`/`check_hostname=False` (the documented public equivalent).
+  Certificate verification stays off by design — fingerprinting must read
+  self-signed/expired certs as evidence — and the README now says so.
+- **Test temp-file hygiene** (LOW). The local TLS server fixture now uses a
+  `tempfile.TemporaryDirectory` that auto-cleans on close/GC even if a test
+  is interrupted; `NamedTemporaryFile(delete=False)` files no longer leak.
+- **Disclosure + pin-semantics documentation** (LOW/INFO). README gains a
+  "Security notes" section: SPKI-SHA-256 is a fingerprint, not a trust
+  anchor; `--json` output (cert chains, pins, CNAME/PTR, IPs) can disclose
+  infrastructure and should be treated as sensitive; unverified TLS is
+  deliberate and means MITM is not detected.
+
 ## [0.1.16] — 2026-08-14
 
 Code-review batch (15 items from the review issue: 2 bugs, vendor

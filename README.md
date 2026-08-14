@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.16
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.17
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -205,7 +205,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.16
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.17
 
 api.example.com:443
 ip        45.60.16.239
@@ -273,6 +273,30 @@ Vendor names are matched with weights: a host behind nginx directly gets
   concluding the origin is exposed.
 - **`--verify` findings** are reported separately (`block fortiweb — ...`)
   so the passive and active layers never blur.
+
+## Security notes
+
+- **Input validation.** Targets from `--target-json` are validated at load:
+  control characters, URI schemes (`file://` etc.), whitespace-in-hostname,
+  and overlong names (>253 chars) are dropped with a warning. **Private /
+  internal IPs (10.x, 192.168.x, 127.x, 169.254.x) are warned but NOT
+  dropped** — scanning internal infrastructure is a legitimate use. Only run
+  w4f against targets you are authorised to scan.
+- **The reported SPKI-SHA-256 is a fingerprint, not a trust anchor.** w4f
+  reports the pin value the edge presents; it does not verify it against any
+  expected set (this is a fingerprinting tool, not a certificate-verification
+  tool). A reported pin implies nothing about whether the endpoint is
+  legitimate — an attacker's certificate has a pin value too.
+- **Output can disclose infrastructure details.** `--json` includes cert
+  chains, SPKI pins, CNAME/PTR records and resolved IPs (including internal
+  ones when you scan them). Treat the output as sensitive and do not share it
+  inadvertently.
+- **The unverified TLS context is deliberate.** Certificate verification is
+  disabled (via the public `ssl.create_default_context()` + `CERT_NONE`) so
+  that self-signed / expired / wrong-hostname certs can still be read as
+  evidence — which is the entire point of edge fingerprinting. This means an
+  active MITM between w4f and the target is not detected; the tool reports
+  what it was actually presented.
 
 **v0.1.14 note — AWS Global Accelerator detected.** The AWS edge that
 resolves to Global Accelerator ranges (`15.197.0.0/16`, `3.33.0.0/16`,

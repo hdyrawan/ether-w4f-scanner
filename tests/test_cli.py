@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from w4f.cli import _load_targets_from_json, build_parser
+from w4f.cli import _load_targets_from_json, _validate_hostport, build_parser
 
 
 class TestTargetJson:
@@ -105,6 +105,55 @@ class TestParser:
     def test_no_targets_exits_2(self):
         from w4f.cli import main
         assert main([]) == 2
+
+
+class TestHostportValidation:
+    """Security review: malicious --target-json input must be rejected."""
+
+    def test_valid_hostname_ok(self):
+        ok, msg = _validate_hostport("api.example.com")
+        assert ok and msg == ""
+
+    def test_valid_hostport_ok(self):
+        ok, msg = _validate_hostport("api.example.com:8443")
+        assert ok and msg == ""
+
+    def test_empty_rejected(self):
+        ok, msg = _validate_hostport("")
+        assert not ok and "empty" in msg
+
+    def test_control_character_rejected(self):
+        ok, _ = _validate_hostport("api.example.com\nrm -rf /")
+        assert not ok
+        ok2, _ = _validate_hostport("api\x00example.com")
+        assert not ok2
+
+    def test_uri_scheme_rejected(self):
+        ok, _ = _validate_hostport("file:///etc/passwd")
+        assert not ok
+        ok2, _ = _validate_hostport("http://api.example.com")
+        assert not ok2
+
+    def test_whitespace_in_hostname_rejected(self):
+        ok, _ = _validate_hostport("api example.com")
+        assert not ok
+
+    def test_overlong_hostname_rejected(self):
+        ok, _ = _validate_hostport("a" * 300 + ".example.com")
+        assert not ok
+
+    def test_private_ip_warned_not_dropped(self):
+        # private/internal scanning is a legitimate use — warn, keep
+        ok, msg = _validate_hostport("10.0.0.5")
+        assert ok and "private" in msg
+        ok2, _ = _validate_hostport("127.0.0.1")
+        assert ok2
+        ok3, msg3 = _validate_hostport("192.168.1.1")
+        assert ok3 and "private" in msg3
+
+    def test_public_ip_no_warning(self):
+        ok, msg = _validate_hostport("8.8.8.8")
+        assert ok and msg == ""
 
 
 def pytest_raises_systemexit():

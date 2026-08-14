@@ -176,6 +176,20 @@ def _parse_cert(der: bytes) -> dict | None:
     }
 
 
+def _unverified_ctx() -> ssl.SSLContext:
+    """Public-API unverified context (fingerprinting needs to read certs that
+    chain validation would reject — self-signed, expired, wrong hostname).
+
+    ssl._create_unverified_context() is a private API; the documented public
+    equivalent is a default context with verification disabled. This is
+    intentional for a fingerprinting tool — the cert is evidence, not trust.
+    """
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
 def tls_probe(host: str, port: int, path: str, timeout: float, do_http: bool) -> dict:
     """One SNI TLS handshake + optional GET (http/1.1 ALPN). Never raises."""
     out: dict = {"port": port, "mtls": False, "http": None, "tls_error": None}
@@ -223,7 +237,7 @@ def tls_probe(host: str, port: int, path: str, timeout: float, do_http: bool) ->
                     pass
             try:
                 sock = socket.create_connection((host, port), timeout=timeout)
-                ctx2 = ssl._create_unverified_context()
+                ctx2 = _unverified_ctx()
                 ctx2.set_alpn_protocols(["h2", "http/1.1"])
                 try:
                     with ctx2.wrap_socket(sock, server_hostname=host) as ts:
@@ -292,7 +306,7 @@ def http_get(host: str, port: int, path: str, timeout: float,
         sock = None
         try:
             sock = socket.create_connection((h, p), timeout=timeout)
-            ctx = ssl.create_default_context() if verify else ssl._create_unverified_context()
+            ctx = ssl.create_default_context() if verify else _unverified_ctx()
             ctx.set_alpn_protocols(["http/1.1"])
             with ctx.wrap_socket(sock, server_hostname=h) as ts:
                 sock = None  # ownership moved to ts; the with closes it
