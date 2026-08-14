@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "w4f"
-version = "0.1.24"
+version = "0.1.25"
 description = "Passive TLS / CDN / WAF / edge fingerprinting of API endpoints"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -40,4 +40,5 @@ Issues = "https://github.com/hdyrawan/w4f/issues"
 w4f = "w4f.cli:main"
 
 [tool.setuptools]
-packages = ["w4f"]
+# auto-discover w4f + all subpackages (w4f.signatures must ship in the wheel)
+packages = {find = {include = ["w4f", "w4f.*"]}}

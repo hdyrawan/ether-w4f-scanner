@@ -5,6 +5,15 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.25] — 2026-08-14
+
+Packaging fix: the `w4f.signatures` subpackage was excluded from the wheel
+(`pyproject.toml` pinned `packages = ["w4f"]`), so an installed w4f failed
+with `ModuleNotFoundError: No module named 'w4f.signatures'` — caught by CI
+after 0.1.24 shipped. Now `packages = {find = {include = ["w4f", "w4f.*"]}}`
+auto-discovers subpackages; verified by installing the wheel into a clean
+venv (70 vendors load). Content otherwise identical to 0.1.24.
+
 ## [0.1.24] — 2026-08-14
 
 Modular vendor signatures.
