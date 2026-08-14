@@ -99,14 +99,20 @@ TLS result (a v0.1.0 bug made cookie-only vendors — notably F5 BIG-IP ASM's
 `TS<hex>` JavaScript-challenge cookie — report "unknown edge"). Re-run any
 sweep that predates this fix before trusting a blank verdict.
 
+**v0.1.2 note:** added Tencent EdgeOne / Tencent Cloud CDN signatures
+(`eo-log-uuid`/`eo-cache-status` headers, `eo.dnse4.com`/`dnsv1.com` CNAMEs).
+Before this, `aquarius.EXAMPLE_BANK.co.id` (CNAME `*.eo.dnse4.com`) reported
+"unknown edge" even though the endpoint research had already documented the
+Tencent EdgeOne edge — the tool must never lag the documented evidence.
+
 ## Vendor coverage
 
 Cloudflare, Imperva, Akamai, AWS CloudFront / WAF / ELB / S3, Fastly, Azure
 Front Door / Application Gateway, Google GFE, F5 BIG-IP, NetScaler, Sucuri,
 StackPath, OpenResty, nginx, Apache, Envoy, HAProxy, Caddy, LiteSpeed,
-Varnish, ArvanCloud, Baidu Yunjiasu, FortiWeb, ModSecurity, NAXSI, Wallarm,
-Wordfence, Zenedge, Zscaler, DDoS-Guard, Edgecast, MaxCDN, KeyCDN, Barracuda,
-Huawei Cloud WAF, SafeDog.
+Varnish, ArvanCloud, **Tencent EdgeOne / Tencent CDN**, Baidu Yunjiasu,
+FortiWeb, ModSecurity, NAXSI, Wallarm, Wordfence, Zenedge, Zscaler,
+DDoS-Guard, Edgecast, MaxCDN, KeyCDN, Barracuda, Huawei Cloud WAF, SafeDog.
 
 ## License
 
