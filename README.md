@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.12
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.14
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -203,7 +203,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.12
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.14
 
 api.example.com:443
 ip        45.60.16.239
@@ -271,6 +271,17 @@ Vendor names are matched with weights: a host behind nginx directly gets
   concluding the origin is exposed.
 - **`--verify` findings** are reported separately (`block fortiweb — ...`)
   so the passive and active layers never blur.
+
+**v0.1.14 note — AWS Global Accelerator detected.** The AWS edge that
+resolves to Global Accelerator ranges (`15.197.0.0/16`, `3.33.0.0/16`,
+PTR `*.awsglobalaccelerator.com`) has no `elb.amazonaws.com` CNAME, so it
+fell through every AWS rule. Found via the Indonesian bank subdomain sweep
+(`bank-example.com` → 15.197.x/3.33.x, 301s to `corporate-portal.example.com`). Added
+`aws-global-accelerator` netblock + PTR rules.
+
+**v0.1.13 note — Kong API gateway detected.** `X-Kong-Upstream-Latency` /
+`X-Kong-Proxy-Latency` headers (and `Server: kong` on older builds), seen on
+example-ride.com. Added `kong` vendor rule.
 
 **v0.1.12 note — AWS WAF on CloudFront is now detected.** Indonesian-ecosystem
 hunt (user-led: example-hospital.com) found CloudFront + **AWS WAF managed
