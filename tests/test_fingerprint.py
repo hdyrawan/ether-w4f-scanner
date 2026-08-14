@@ -578,3 +578,7 @@ class TestChineseEdges:
         r = _result(headers={"server": "nginx/1.24.0"})
         names = [m["vendor"] for m in fingerprint(r)]
         assert names == ["nginx"]
+
+    def test_qrator_server(self):
+        r = _result(headers={"server": "QRATOR"})
+        assert "qrator" in [m["vendor"] for m in fingerprint(r)]
