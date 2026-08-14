@@ -57,20 +57,33 @@ python3 -m w4f --target api.example.com
 
 ```
 w4f --target host[:port] [--target host2[:port] ...] \
+    [--target-json FILE] \
     [--path /] [--timeout 8] [--workers 8] \
     [--json out.json] [--md out.md] [--no-http] [--quiet]
 
-    --target    DNS name or IP, optional :port (default 443). Repeatable.
-    --path      HTTP path to GET (default /)
-    --timeout   connect/TLS/HTTP timeout per host (default 8s)
-    --workers   parallel host count (default 8)
-    --json      write the full machine-readable result tree to FILE
-    --md        write markdown per-host blocks (for docs) to FILE
-    --no-http   TLS/cert/DNS only, skip the HTTP request
-    --quiet     suppress the per-host console block (useful with --json/--md)
+    --target        DNS name or IP, optional :port (default 443). Repeatable.
+    --target-json   JSON file of targets — a subdomain-enumeration export
+                    (array of {"subdomain","ip","cloudflare"} objects, e.g.
+                    subdomainfinder.c99.nl), an array of strings, or an
+                    object with a subdomains/hosts list. Each subdomain is
+                    scanned like a --target. Combine with --target freely.
+    --path          HTTP path to GET (default /)
+    --timeout       connect/TLS/HTTP timeout per host (default 8s)
+    --workers       parallel host count (default 8)
+    --json          write the full machine-readable result tree to FILE
+    --md            write markdown per-host blocks (for docs) to FILE
+    --no-http       TLS/cert/DNS only, skip the HTTP request
+    --quiet         suppress the per-host console block (useful with --json/--md)
 ```
 
-Multiple targets are scanned in parallel; results are printed sorted by host.
+At least one of `--target` or `--target-json` is required. Multiple targets
+are scanned in parallel; results are printed sorted by host.
+
+Example — scan every subdomain in a subdomainfinder.c99.nl export:
+
+```
+w4f --target-json subdomains.json --json out.json --md out.md
+```
 
 ## What it reports
 
