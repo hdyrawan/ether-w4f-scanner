@@ -48,11 +48,15 @@ the tool and its documentation.
   trailing `@` endmarks stripped, all 11 rows kept) — do not "improve" the
   layout, it must match taag.
 - **Testing is mandatory before a release.** `python -m pytest` runs the
-  offline suite (72 tests; local TLS server, no internet). The vendor
+  offline suite (83 tests; local TLS server, no internet). The vendor
   signature table has per-regex sanity tests — when adding a vendor or
   signature, add a positive AND a negative case to `tests/`. The
   `--verify` block-page matcher tests the two field traps (title at end of
   body, localized titles). CI runs 3.10/3.11/3.12 + a no-optional-deps job.
+- **http_get follows redirects (apex → www).** The WAF often lives only on
+  the www response; the apex is a redirector. Keep `max_redirects` bounded
+  (5) and record the chain in `redirects`/`final_host`. Integration tests
+  cover both follow and loop-stop.
 - **Publishing to PyPI is a tag push.** The `publish.yml` workflow is the
   trusted publisher for hdyrawan/w4f (workflow name must stay `publish.yml`,
   no environment). To release: bump `__version__` in `w4f/__init__.py` AND

@@ -63,6 +63,36 @@ class TestHttpGet:
         assert out["set-cookie-list"][0].startswith("TS01a3d6e7=")
 
 
+class TestRedirectFollowing:
+    """apex -> www: the WAF lives on the FINAL response, not the redirector."""
+
+    def test_follows_relative_redirect(self, tls_server):
+        # first server 301s to a relative path on a SECOND server; the second
+        # carries the WAF header. http_get must follow and return server #2.
+        target = tls_server(status="HTTP/1.1 200 OK",
+                            headers=["Server: AkamaiGHost", "X-WAF: kona"],
+                            body=b"www")
+        # server A redirects to server B's port
+        redir = tls_server(status="HTTP/1.1 301 Moved Permanently",
+                           headers=[f"Location: https://127.0.0.1:{target.port}/"],
+                           body=b"")
+        out = http_get("127.0.0.1", redir.port, "/", 5.0)
+        assert out["status"] == "HTTP/1.1 200 OK"
+        assert out["headers"]["server"] == "AkamaiGHost"
+        assert out["redirects"] == [f"https://127.0.0.1:{target.port}/"]
+        assert out["final_host"] == "127.0.0.1"
+
+    def test_stops_after_max_redirects(self, tls_server):
+        # a server that 301s to itself forever must not loop past the cap
+        redir = tls_server(status="HTTP/1.1 301 Moved Permanently",
+                           headers=[f"Location: https://127.0.0.1:{0}/"])
+        # patch the Location to its own port (the server got a real port)
+        redir.headers = [f"Location: https://127.0.0.1:{redir.port}/"]
+        out = http_get("127.0.0.1", redir.port, "/", 5.0, max_redirects=2)
+        assert len(out["redirects"]) <= 3  # initial + 2 hops
+        assert out["status"].startswith("HTTP/1.1 301")
+
+
 class TestVerifyBlock:
     def test_fortiweb_block(self, tls_server):
         body = b"x" * 38000 + b"<html><head><title>The URL you requested has been blocked</title></head></html>"

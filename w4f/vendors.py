@@ -49,10 +49,13 @@ VENDORS: dict[str, dict] = {
         ],
     },
     "akamai": {
-        "headers": {"server": r"akamai", "x-akamai": None, "x-akamai-transformed": None},
-        "cookies": [r"^ak_bmsc=", r"^bm_sz=", r"^akavpau_", r"^_abck="],
+        "headers": {"server": r"akamai", "x-akamai": None, "x-akamai-transformed": None,
+                    # Kona WAF signals: AkamaiGHost server + request-tracking headers
+                    "akamai-grn": None, "x-grn": None, "akamai-request-bc": None},
+        "cookies": [r"^ak_bmsc=", r"^bm_sz=", r"^akavpau_", r"^_abck=",
+                    r"^aka~", r"^akaalb_"],
         "cert": r"akamai",
-        "cname": r"akamaized|akamaihd|edgesuite|akadns",
+        "cname": r"akamaized|akamaihd|edgesuite|akadns|akamai\.net",
         "ptr": r"akamai",
         "nets": [
             "23.32.0.0/11", "104.64.0.0/10", "184.24.0.0/13",
@@ -142,6 +145,31 @@ VENDORS: dict[str, dict] = {
     },
     "openresty": {
         "headers": {"server": r"openresty"},
+    },
+    "tengine": {
+        # Alibaba's nginx fork — example-market.com / tmall / aliexpress family.
+        "headers": {"server": r"tengine", "x-server-id": None, "x-eagleeye-id": None},
+    },
+    "tencent-gateway": {
+        # Tencent edge gateways: stgw (apex), tRPC-Gateway (www.example.com).
+        "headers": {"server": r"stgw|trpc-gateway", "x-upstream-latency": None},
+        "cname": r"tencentcs\.com|dnspod|tcdn",
+    },
+    "bytedance": {
+        # ByteDance edge (TikTok/抖音 family): server TLB + x-tt-* headers.
+        "headers": {"server": r"tlb", "x-tt-logid": None, "x-tt-trace-id": None,
+                    "x-bytefaas-request-id": None},
+        "cname": r"bytecdn|byteimg|byteacctimg|tikcdn|akamaized",
+    },
+    "pepyaka": {
+        # Wix's own edge (Fastly-backed): server Pepyaka + x-cache-status.
+        "headers": {"server": r"pepyaka", "x-cache-status": None},
+        "cname": r"wix\.com|fastly",
+    },
+    "azure-app-service": {
+        # Azure App Service / App Gateway family: ARRAffinity cookie + azurewebsites.
+        "cookies": [r"^ARRAffinity", r"^ARRAffinitySameSite"],
+        "cname": r"azurewebsites\.net|azurefd\.net",
     },
     "nginx": {
         "headers": {"server": r"nginx(?:/|$)"},

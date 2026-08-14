@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.10
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.11
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -203,7 +203,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.10
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.11
 
 api.example.com:443
 ip        45.60.16.239
@@ -272,14 +272,30 @@ Vendor names are matched with weights: a host behind nginx directly gets
 - **`--verify` findings** are reported separately (`block fortiweb — ...`)
   so the passive and active layers never blur.
 
+**v0.1.11 note — internet-wide accuracy sweep.** A 138-host cross-check
+against an independent active WAF detector closed the two biggest accuracy
+gaps: (1) **redirect-following** — most sites 301 from the apex to `www`
+and only the final response carries the WAF, so w4f now follows up to 5
+hops (`example-news.com` apex said `varnish`, `www.example-news.com` is Akamai Kona);
+(2) **Akamai Kona signals** — `AkamaiGHost`, `akamai-grn`, `x-grn`,
+`x-akamai-transformed`, `akamai-request-bc` (12 hosts were missed). New
+vendors: `tengine` (Alibaba), `tencent-gateway` (stgw/tRPC-Gateway),
+`bytedance` (TikTok TLB), `pepyaka` (Wix), `azure-app-service`
+(ARRAffinity). Disagreements vs the oracle dropped 31 → 6, and the 6
+remainders are semantic-layer differences where w4f is more specific
+(e.g. TikTok is ByteDance's edge, not the Akamai node in its chain).
+Evidence: `experiments/accuracy-sweep-2026-08-14/`.
+
 ### Signature coverage
 
-Cloudflare, Imperva, Akamai, AWS CloudFront / WAF / ELB / S3 / EC2, Fastly,
-Azure Front Door / Application Gateway, Google GFE, F5 BIG-IP, NetScaler,
-GTM/GSLB DNS LB, Sucuri, StackPath, OpenResty, nginx, Apache, HAProxy
-(server + stick cookie), Envoy, Caddy, LiteSpeed, Varnish, ArvanCloud,
-Tencent EdgeOne / Tencent CDN, Baidu Yunjiasu, FortiWeb, ModSecurity, NAXSI,
-Wallarm, Wordfence, Zenedge, Zscaler, DDoS-Guard, Edgecast, MaxCDN, KeyCDN,
+Cloudflare, Imperva, Akamai (incl. Kona WAF signals), AWS CloudFront / WAF /
+ELB / S3 / EC2, Fastly, Azure Front Door / Application Gateway / App
+Service, Google GFE / Cloud Armor, F5 BIG-IP, NetScaler, GTM/GSLB DNS LB,
+Sucuri, StackPath, OpenResty, nginx, Apache, HAProxy (server + stick
+cookie), Envoy, Caddy, LiteSpeed, Varnish, ArvanCloud, Tencent EdgeOne /
+Tencent CDN / Tencent gateway (stgw/tRPC), Alibaba Tengine, ByteDance TLB,
+Wix Pepyaka, Baidu Yunjiasu, FortiWeb, ModSecurity, NAXSI, Wallarm,
+Wordfence, Zenedge, Zscaler, DDoS-Guard, Edgecast, MaxCDN, KeyCDN,
 Barracuda, Huawei Cloud WAF, SafeDog — plus block-page signatures for
 FortiWeb (EN + localized ID), F5 ASM, Cloudflare and Imperva under `--verify`.
 

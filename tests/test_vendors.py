@@ -97,3 +97,61 @@ class TestRegexSanity:
         rx = re.compile(VENDORS["tencent-edgeone"]["cname"], re.I)
         assert rx.search("aquarius.EXAMPLE_BANK.co.id.eo.dnse4.com")
         assert rx.search("foo.cdn.dnsv1.com.cn")
+
+
+class TestNewSignatures:
+    """Rules added from the 2026-08-14 internet accuracy sweep."""
+
+    def _names(self, headers=None, cookies=None):
+        return [m["vendor"] for m in _fingerprint_result(headers=headers, cookies=cookies)]
+
+    def test_akamai_kona_akamai_ghost_server(self):
+        # www.example.com / www.example-registrar.com / www.example.com / www.example.com 403s
+        assert "akamai" in self._names(headers={"server": "AkamaiGHost"})
+
+    def test_akamai_kona_grn_headers(self):
+        # www.example.com: akamai-grn + x-akamai-transformed; www.example.com: x-grn
+        assert "akamai" in self._names(headers={"akamai-grn": "0.9717d58c.1786708538.9a9d337"})
+        assert "akamai" in self._names(headers={"x-grn": "0.6e0f3517.1786708538.308a92d1"})
+        assert "akamai" in self._names(headers={"x-akamai-transformed": "0 - 0 -"})
+
+    def test_akamai_request_bc(self):
+        # Kona block-page context header on www.example.com / www.example.com
+        assert "akamai" in self._names(headers={"akamai-request-bc": "[a=23.53.15.87,b=145019611]"})
+
+    def test_tengine_alibaba(self):
+        # www.example-market.com: server Tengine + x-server-id
+        assert "tengine" in self._names(headers={"server": "Tengine", "x-server-id": "28c3d6b2"})
+
+    def test_tencent_gateway(self):
+        # example.com: stgw on apex, tRPC-Gateway on www
+        assert "tencent-gateway" in self._names(headers={"server": "stgw"})
+        assert "tencent-gateway" in self._names(
+            headers={"server": "tRPC-Gateway", "x-upstream-latency": "7"})
+
+    def test_pepyaka_wix(self):
+        assert "pepyaka" in self._names(headers={"server": "Pepyaka", "x-cache-status": "HIT"})
+
+    def test_bytedance_tiktok(self):
+        # TikTok: server TLB + x-tt-logid (ByteDance edge, not Akamai Kona)
+        assert "bytedance" in self._names(
+            headers={"server": "TLB", "x-tt-logid": "20260814200057591DC34EF92C2774412B"})
+
+    def test_azure_app_service(self):
+        # example-energy.com: ARRAffinity cookies
+        assert "azure-app-service" in self._names(
+            cookies=["ARRAffinity=041885bba0a0f1c52e4b5a646bc9983c;Path=/;HttpOnly"])
+
+    def test_no_false_positive_on_plain_nginx(self):
+        assert self._names(headers={"server": "nginx/1.24.0"}) == ["nginx"]
+
+
+def _fingerprint_result(headers=None, cookies=None, cname=None, ptr=None, ips=None, cert=None):
+    from w4f.scanner import fingerprint
+    return fingerprint({
+        "ips": ips or ["8.8.8.8"],
+        "cname": cname or [],
+        "ptr": ptr or [],
+        "cert": cert or {},
+        "tls": {"http": {"headers": headers or {}, "set-cookie-list": cookies or []}},
+    })

@@ -255,7 +255,16 @@ def _collect_tls(ts: ssl.SSLSocket, out: dict) -> None:
         out["cert"] = _parse_cert(der)
 
 
-def http_get(host: str, port: int, path: str, timeout: float) -> dict:
+def http_get(host: str, port: int, path: str, timeout: float,
+             max_redirects: int = 5) -> dict:
+    """One HTTP/1.1 GET, following redirects (apex -> www -> ...).
+
+    Many hosts 301 from the bare domain to www and only the *final*
+    response carries the WAF (Akamai Kona on www.example-news.com, Cloudflare on
+    www.example-registrar.com, ...). Probing the apex alone would fingerprint the
+    redirector, not the edge. Follows up to max_redirects hops; the final
+    response is returned with the redirect chain recorded.
+    """
     req = (
         f"GET {path} HTTP/1.1\r\n"
         f"Host: {host}\r\n"
@@ -264,16 +273,16 @@ def http_get(host: str, port: int, path: str, timeout: float) -> dict:
         "Connection: close\r\n\r\n"
     )
 
-    def _once(verify: bool) -> dict:
+    def _once(verify: bool, h: str, p: int, pth: str) -> dict:
         sock = None
         try:
-            sock = socket.create_connection((host, port), timeout=timeout)
+            sock = socket.create_connection((h, p), timeout=timeout)
             ctx = ssl.create_default_context() if verify else ssl._create_unverified_context()
             ctx.set_alpn_protocols(["http/1.1"])
-            with ctx.wrap_socket(sock, server_hostname=host) as ts:
+            with ctx.wrap_socket(sock, server_hostname=h) as ts:
                 sock = None  # ownership moved to ts; the with closes it
                 ts.settimeout(timeout)
-                ts.sendall(req.encode())
+                ts.sendall(req.replace(f"Host: {host}", f"Host: {h}").encode())
                 data = b""
                 while b"\r\n\r\n" not in data and len(data) < 65536:
                     chunk = ts.recv(4096)
@@ -291,11 +300,41 @@ def http_get(host: str, port: int, path: str, timeout: float) -> dict:
                     pass
             return {"status": f"ERROR: {e}", "headers": {}, "set-cookie-list": []}
 
-    result = _once(verify=True)
-    if result["status"].startswith("ERROR") and "certificate" in result["status"].lower():
-        # Chain not trusted from this client — headers are still fingerprint
-        # evidence (server header, cookies), so retry without validation.
-        result = _once(verify=False)
+    def _probe(verify: bool, h: str, p: int, pth: str) -> dict:
+        result = _once(verify, h, p, pth)
+        if result["status"].startswith("ERROR") and "certificate" in result["status"].lower():
+            # Chain not trusted from this client — headers are still
+            # fingerprint evidence, so retry without validation.
+            result = _once(False, h, p, pth)
+        return result
+
+    cur_host, cur_port, cur_path = host, port, path
+    redirects: list[str] = []
+    result: dict = {"status": "ERROR: no response", "headers": {}, "set-cookie-list": []}
+    for _hop in range(max_redirects + 1):
+        result = _probe(True, cur_host, cur_port, cur_path)
+        if result["status"].startswith("ERROR"):
+            return result
+        loc = (result.get("headers") or {}).get("location", "")
+        if loc and result["status"].startswith(("HTTP/1.1 3", "HTTP/1.0 3", "HTTP/2 3")):
+            redirects.append(loc)
+            if loc.startswith("http"):
+                from urllib.parse import urlparse
+                u = urlparse(loc)
+                cur_host = u.hostname or cur_host
+                cur_port = u.port or (443 if u.scheme == "https" else 80)
+                cur_path = u.path or "/"
+                if u.query:
+                    cur_path += "?" + u.query
+            elif loc.startswith("/"):
+                cur_path = loc
+            else:
+                break  # unparseable location, keep what we have
+            continue
+        break
+
+    result["redirects"] = redirects
+    result["final_host"] = cur_host
     return result
 
 
