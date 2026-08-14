@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 import re
 import socket
 import ssl
 from datetime import datetime, timezone
+
+log = logging.getLogger(__name__)
 
 try:
     import dns.resolver
@@ -40,8 +43,8 @@ def resolve(host: str) -> dict:
                 rev = _DNS.reversename.from_address(str(ip))
                 for r in _DNS.resolver.resolve(rev, "PTR"):
                     out["ptr"].append(str(r.target).rstrip("."))
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("PTR lookup failed for %s: %s", ip, e)
         return out
     except ValueError:
         pass
@@ -51,21 +54,21 @@ def resolve(host: str) -> dict:
                 c = str(r.target).rstrip(".")
                 if c.lower() != host.lower():
                     out["cname"].append(c)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("CNAME lookup failed for %s: %s", host, e)
         for qtype in ("A", "AAAA"):
             try:
                 for r in _DNS.resolver.resolve(host, qtype):
                     out["ips"].append(str(r))
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("%s lookup failed for %s: %s", qtype, host, e)
         for ip in out["ips"]:
             try:
                 rev = _DNS.reversename.from_address(ip)
                 for r in _DNS.resolver.resolve(rev, "PTR"):
                     out["ptr"].append(str(r.target).rstrip("."))
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("PTR lookup failed for %s: %s", ip, e)
     else:
         try:
             infos = socket.getaddrinfo(host, None)
@@ -73,8 +76,8 @@ def resolve(host: str) -> dict:
                 ip = info[4][0]
                 if ip not in out["ips"]:
                     out["ips"].append(ip)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("getaddrinfo failed for %s: %s", host, e)
     if not out["cname"]:
         try:
             # getaddrinfo returns (family, type, proto, canonname, sockaddr);
@@ -83,8 +86,8 @@ def resolve(host: str) -> dict:
                 canon = info[3]
                 if canon and canon not in out["cname"]:
                     out["cname"].append(canon)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("canonical-name lookup failed for %s: %s", host, e)
     return out
 
 
@@ -142,8 +145,17 @@ def _parse_cert(der: bytes) -> dict | None:
     except Exception:
         spki_sha256 = ""
 
-    nb = cert.not_valid_before_utc
-    na = cert.not_valid_after_utc
+    # cryptography >= 42 exposes not_valid_before_utc; older builds only have
+    # the tz-naive not_valid_before. getattr avoids an AttributeError that the
+    # bare except would otherwise swallow (silently degrading the cert dict).
+    # Normalize the fallback to aware UTC so the days_remaining math below
+    # works with an aware `now`.
+    nb = getattr(cert, "not_valid_before_utc", None) or cert.not_valid_before
+    na = getattr(cert, "not_valid_after_utc", None) or cert.not_valid_after
+    if nb.tzinfo is None:
+        nb = nb.replace(tzinfo=timezone.utc)
+    if na.tzinfo is None:
+        na = na.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
     return {
         "subject": _name(subject) or "(empty)",
@@ -201,6 +213,8 @@ def tls_probe(host: str, port: int, path: str, timeout: float, do_http: bool) ->
             msg = str(e).lower()
             if "certificate required" in msg or "certificate required" in getattr(e, "strerror", ""):
                 out["mtls"] = True
+            else:
+                log.debug("TLS verification failed for %s:%s: %s", host, port, e)
             # fall through: retry unvalidated to still grab the cert
             if sock is not None:
                 try:
@@ -240,6 +254,7 @@ def tls_probe(host: str, port: int, path: str, timeout: float, do_http: bool) ->
                 sock.close()  # non-SSLError failure (timeout/OSError) — don't leak
             except Exception:
                 pass
+        log.debug("TLS probe failed for %s:%s: %s", host, port, e)
         out["tls_error"] = f"tls failed: {e}"
     out["chain_verified"] = verified if "chain_verified" not in out else out["chain_verified"]
     return out
@@ -461,6 +476,18 @@ def match_block_page(title: str, head_text: str, body_text: str, status: str) ->
         return {"vendor": "f5-asm", "title": title, "status": status}
     if "attention required" in t and "cloudflare" in body_text:
         return {"vendor": "cloudflare", "title": title, "status": status}
+    # Akamai Kona WAF / Bot Manager block page.
+    if "access denied" in t and "akamai" in body_text:
+        return {"vendor": "akamai", "title": title, "status": status}
+    # Sucuri firewall block page.
+    if "sucuri firewall" in body_text:
+        return {"vendor": "sucuri", "title": title, "status": status}
+    # Wordfence WAF block page.
+    if "wordfence" in body_text:
+        return {"vendor": "wordfence", "title": title, "status": status}
+    # Wallarm block page (nginx + Wallarm WAF).
+    if "wallarm" in body_text and "blocked" in body_text:
+        return {"vendor": "wallarm", "title": title, "status": status}
     if "incapsula" in body_text or "incap_ses" in head_text:
         return {"vendor": "imperva", "title": title, "status": status}
     # AWS WAF fronted by CloudFront: a 403 with CloudFront's generic error

@@ -204,6 +204,62 @@ class TestNewSignatures:
         assert "azure-app-service" in self._names(
             cookies=["ARRAffinity=041885bba0a0f1c52e4b5a646bc9983c;Path=/;HttpOnly"])
 
+    def test_cloudflare_turnstile_cookies(self):
+        # cf_turnstile_ / cf_chl_ cookies are Cloudflare challenge signals
+        assert "cloudflare" in self._names(cookies=["cf_turnstile_abc=1; Path=/"])
+        assert "cloudflare" in self._names(cookies=["cf_chl_opt=1; Path=/"])
+
+    def test_cloudflare_waf_mitigated(self):
+        # cf-mitigated: challenge is a managed-challenge/WAF verdict
+        assert "cloudflare-waf" in self._names(
+            headers={"cf-mitigated": "challenge"})
+        assert "cloudflare-waf" in self._names(
+            headers={"cf-mitigated": "blocked"})
+        assert "cloudflare-waf" in self._names(
+            cookies=["cf-waf-token=abc; Path=/"])
+
+    def test_akamai_bot_manager_e3d_cookie(self):
+        # ak_bmsc with an E3D tag inside the value = Bot Manager active
+        assert "akamai" in self._names(cookies=[
+            "ak_bmsc=0xABC~1AA;~_q=1;~e=2; E3D=15F0CD8D9A5C~_p=1"])
+        # plain ak_bmsc without E3D still matches akamai via the first rule
+        assert "akamai" in self._names(cookies=["ak_bmsc=0xABC~1AA;~_q=1"])
+
+    def test_vercel(self):
+        assert "vercel" in self._names(
+            headers={"x-vercel-id": "sfo1::abc::123"},
+            cname=["my-app.vercel.app"])
+        assert "vercel" in self._names(headers={"server": "vercel"})
+
+    def test_google_cloud_run(self):
+        assert "google-cloud-run" in self._names(
+            headers={"x-cloud-trace-context": "0123456789abcdef/1;o=1"})
+        assert "google-cloud-run" in self._names(
+            cname=["svc-abc-123.a.run.app"])
+
+    def test_aws_app_runner(self):
+        assert "aws-app-runner" in self._names(
+            headers={"x-app-runner-region": "ap-southeast-3"})
+        assert "aws-app-runner" in self._names(
+            cname=["default.abc123.ap-southeast-3.awsapprunner.com"])
+
+    def test_openresty_x_openresty_header(self):
+        assert "openresty" in self._names(
+            headers={"server": "openresty/1.21.4.1", "x-openresty": "1"})
+
+    def test_fastly_waf_signal_sciences(self):
+        assert "fastly-waf" in self._names(
+            headers={"signal-attack": "1"},
+            cookies=["__SignalShield_session=abc"])
+        assert "fastly-waf" not in self._names(headers={"server": "fastly"})
+
+    def test_bytedance_no_akamaized_false_positive(self):
+        # an Akamai customer CNAME must NOT claim bytedance
+        assert "bytedance" not in self._names(cname=["cdn.example.akamaized.net"])
+        assert "akamai" in self._names(cname=["cdn.example.akamaized.net"])
+        # ByteDance-owned CNAME still matches
+        assert "bytedance" in self._names(cname=["v16m.tiktokcdn.com"])
+
     def test_no_false_positive_on_plain_nginx(self):
         assert self._names(headers={"server": "nginx/1.24.0"}) == ["nginx"]
 

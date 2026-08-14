@@ -31,6 +31,29 @@ class TestTargetJson:
         p.write_text(json.dumps({"subdomains": ["x.example.com"]}))
         assert _load_targets_from_json(str(p)) == ["x.example.com"]
 
+    def test_dict_with_hosts_key(self, tmp_path):
+        p = tmp_path / "hosts-key.json"
+        p.write_text(json.dumps({"hosts": ["a.example.com", "b.example.com"]}))
+        assert _load_targets_from_json(str(p)) == ["a.example.com", "b.example.com"]
+
+    def test_dict_with_targets_key(self, tmp_path):
+        p = tmp_path / "targets-key.json"
+        p.write_text(json.dumps({"targets": ["a.example.com"]}))
+        assert _load_targets_from_json(str(p)) == ["a.example.com"]
+
+    def test_dict_with_results_key(self, tmp_path):
+        p = tmp_path / "results-key.json"
+        p.write_text(json.dumps({"results": ["a.example.com"]}))
+        assert _load_targets_from_json(str(p)) == ["a.example.com"]
+
+    def test_dict_with_host_field_in_objects(self, tmp_path):
+        # object entries may carry "host" or "name" instead of "subdomain"
+        p = tmp_path / "host-field.json"
+        p.write_text(json.dumps([{"host": "a.example.com"},
+                                 {"name": "b.example.com"},
+                                 {"subdomain": "c.example.com"}]))
+        assert _load_targets_from_json(str(p)) == ["a.example.com", "b.example.com", "c.example.com"]
+
     def test_missing_file(self, tmp_path):
         import pytest
         with pytest.raises(FileNotFoundError):

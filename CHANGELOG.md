@@ -5,6 +5,50 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.16] — 2026-08-14
+
+Code-review batch (15 items from the review issue: 2 bugs, vendor
+additions, block pages, QA coverage, code quality).
+
+**Bug fixes**
+- **bytedance CNAME no longer includes `akamaized`** — that suffix belongs
+  to Akamai customers; matching it made every `*.akamaized.net` host also
+  claim `bytedance`. ByteDance-owned suffixes only (`bytecdn|byteimg|
+  byteacctimg|tikcdn|tiktokcdn`); the TikToken CNAME now fires correctly.
+- **aws-waf passive rule anchored** — `x-cache` now matches
+  `^error from cloudfront$` so ordinary CloudFront 403s (origin errors) are
+  no longer labeled WAF.
+
+**New vendors / signals**
+- `cloudflare-waf` — Bot Management / managed-challenge verdicts distinct
+  from CDN-only: `cf-mitigated: challenge|blocked`, `cf-chl-bypass`,
+  `cf-waf-rule-id`, `__cf_bm` / `cf-waf-token` / `cf_chl_` cookies.
+- Cloudflare Turnstile/challenge signals on the base vendor: `cf_turnstile_`,
+  `cf_chl_` cookies, `cf-mitigated` header.
+- Akamai Bot Manager E3D tag inside the `ak_bmsc` cookie.
+- `vercel` (`x-vercel-id`/`x-vercel-cache`/`*.vercel.app`),
+  `google-cloud-run` (`x-cloud-trace-context`/`*.run.app`),
+  `aws-app-runner` (`x-app-runner-region`/`*.awsapprunner.com`).
+- OpenResty `x-openresty` header signal.
+- `fastly-waf` — Signal Sciences signals (`signal-attack`, `__SignalShield_`).
+- 4 new `--verify` block-page signatures: Akamai Kona ("Access Denied"),
+  Sucuri ("Sucuri Firewall"), Wordfence, Wallarm.
+
+**Code quality**
+- `cryptography < 42` compat: `not_valid_before_utc` getattr fallback with
+  tz-aware normalization (old builds raise AttributeError on the *utc
+  accessor; the fallback was silently swallowing it).
+- Debug logging for the previously bare `except` sites (DNS resolution, TLS
+  probe) — still never raises, but the failure reason is available at
+  DEBUG level now.
+
+**QA coverage (+23 tests, 121 total)**
+- `_load_targets_from_json` hosts/targets/results dict keys + host/name
+  fields in objects; IPv6 literal + DNS-failure resolve; `--no-http` path;
+  JSON output schema; multi-vendor ranking; timeout error dict; redirect to
+  HTTP scheme; chunked/garbage `parse_http_response`; empty/long
+  `match_block_page` titles; new-vendor and block-page cases.
+
 ## [0.1.15] — 2026-08-14
 
 Rules mined from the Indonesian bank subdomain sweep's 489-host UNKNOWN

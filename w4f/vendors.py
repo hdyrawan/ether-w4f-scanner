@@ -21,8 +21,11 @@ import threading
 
 VENDORS: dict[str, dict] = {
     "cloudflare": {
-        "headers": {"server": r"cloudflare", "cf-ray": None, "cf-cache-status": None},
-        "cookies": [r"^__cfduid=", r"^__cf_bm=", r"^_cfuvid="],
+        "headers": {"server": r"cloudflare", "cf-ray": None, "cf-cache-status": None,
+                    # Turnstile / challenge / managed-challenge mitigation
+                    "cf-mitigated": r"challenge|blocked"},
+        "cookies": [r"^__cfduid=", r"^__cf_bm=", r"^_cfuvid=",
+                    r"^cf_chl_", r"^cf_turnstile_"],
         "cert": r"cloudflare",
         "cname": r"cloudflare",
         "ptr": r"cloudflare",
@@ -34,6 +37,15 @@ VENDORS: dict[str, dict] = {
             "103.31.4.0/22", "2400:cb00::/32", "2606:4700::/32",
             "2803:f800::/32", "2c0f:f248::/32",
         ],
+    },
+    "cloudflare-waf": {
+        # Cloudflare WAF / Bot Management: challenge or block verdicts that
+        # CDN-only hosts never emit. cf-mitigated is emitted by the managed
+        # challenge/Turnstile path; the cf_chl_/cf-waf-token cookies and
+        # cf-chl-bypass header belong to the JS-challenge flow.
+        "headers": {"cf-mitigated": r"challenge|blocked", "cf-chl-bypass": None,
+                    "cf-waf-rule-id": None},
+        "cookies": [r"^__cf_bm=", r"^cf-waf-token=", r"^cf_chl_"],
     },
     "imperva": {
         "headers": {"x-iinfo": None, "x-cdn": r"incap", "server": r"imperva"},
@@ -53,7 +65,9 @@ VENDORS: dict[str, dict] = {
                     # Kona WAF signals: AkamaiGHost server + request-tracking headers
                     "akamai-grn": None, "x-grn": None, "akamai-request-bc": None},
         "cookies": [r"^ak_bmsc=", r"^bm_sz=", r"^akavpau_", r"^_abck=",
-                    r"^aka~", r"^akaalb_"],
+                    r"^aka~", r"^akaalb_",
+                    # Bot Manager E3D tag inside the ak_bmsc cookie value
+                    r"^ak_bmsc=[^;]*;\s*.*\bE3D="],
         "cert": r"akamai",
         "cname": r"akamaized|akamaihd|edgesuite|akadns|akamai\.net",
         "ptr": r"akamai",
@@ -82,7 +96,7 @@ VENDORS: dict[str, dict] = {
         # pseudo-header _status by fingerprint().
         "headers": {"x-amz-id": None, "x-amz-request-id": None,
                     "x-blocked-by-waf": r"awsmanagedrules|blocked_by_custom_response",
-                    "_status": r"403", "x-cache": r"error from cloudfront"},
+                    "_status": r"403", "x-cache": r"^error from cloudfront$"},
         "cookies": [r"^aws\.?alb="],
     },
     "aws-elb": {
@@ -115,6 +129,12 @@ VENDORS: dict[str, dict] = {
         "cname": r"fastly\.net|fastlylb\.net",
         "ptr": r"fastly\.net",
         "nets": ["151.101.0.0/16", "199.232.0.0/16", "146.75.0.0/16", "172.111.64.0/18"],
+    },
+    "fastly-waf": {
+        # Fastly Next-Gen WAF (formerly Signal Sciences): distinct debug
+        # header + SignalShield cookie from the plain CDN layer.
+        "headers": {"fastly-waf-debug": None, "signal-attack": None},
+        "cookies": [r"^__SignalShield_"],
     },
     "azure-frontdoor": {
         # CONFIG_NOCACHE x-cache value is Front Door's own cache config
@@ -177,7 +197,9 @@ VENDORS: dict[str, dict] = {
         "headers": {"server": r"stackpath"},
     },
     "openresty": {
-        "headers": {"server": r"openresty"},
+        # Some OpenResty deployments add an explicit X-Openresty header
+        # beyond the Server token.
+        "headers": {"server": r"openresty", "x-openresty": None},
     },
     "kong": {
         # Kong API gateway — example-ride.com serves X-Kong-* latency headers
@@ -196,9 +218,12 @@ VENDORS: dict[str, dict] = {
     },
     "bytedance": {
         # ByteDance edge (TikTok/抖音 family): server TLB + x-tt-* headers.
+        # akamaized is NOT a ByteDance CNAME — Akamai customers use it too,
+        # so matching it here would false-positive every Akamai host as
+        # bytedance. ByteDance-owned suffixes only.
         "headers": {"server": r"tlb", "x-tt-logid": None, "x-tt-trace-id": None,
                     "x-bytefaas-request-id": None},
-        "cname": r"bytecdn|byteimg|byteacctimg|tikcdn|akamaized",
+        "cname": r"bytecdn|byteimg|byteacctimg|tikcdn|tiktokcdn",
     },
     "pepyaka": {
         # Wix's own edge (Fastly-backed): server Pepyaka + x-cache-status.
@@ -209,6 +234,23 @@ VENDORS: dict[str, dict] = {
         # Azure App Service / App Gateway family: ARRAffinity cookie + azurewebsites.
         "cookies": [r"^ARRAffinity", r"^ARRAffinitySameSite"],
         "cname": r"azurewebsites\.net|azurefd\.net",
+    },
+    "vercel": {
+        # Vercel edge: x-vercel-id / x-vercel-cache headers, *.vercel.app CNAME.
+        "headers": {"x-vercel-id": None, "x-vercel-cache": None, "server": r"vercel"},
+        "cname": r"\.vercel\.app$",
+    },
+    "google-cloud-run": {
+        # Google Cloud Run: x-cloud-trace-context header, *.run.app CNAME.
+        "headers": {"x-cloud-trace-context": None},
+        "cname": r"\.run\.app$",
+        "ptr": r"run\.app$",
+    },
+    "aws-app-runner": {
+        # AWS App Runner: x-app-runner-region header, *.awsapprunner.com CNAME.
+        "headers": {"x-app-runner-region": None},
+        "cname": r"\.awsapprunner\.com$",
+        "ptr": r"awsapprunner\.com$",
     },
     "nginx": {
         "headers": {"server": r"nginx(?:/|$)"},
