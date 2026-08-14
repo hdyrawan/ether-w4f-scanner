@@ -3,8 +3,10 @@ name: publish
 # Trusted publisher (OIDC) release to PyPI.
 #
 # PyPI's "pending publisher" for hdyrawan/w4f is configured for THIS
-# workflow name (publish.yml) with no environment, so:
+# workflow name (publish.yml) with environment "pypi", so:
 #   - the file name must stay publish.yml (renaming it breaks publishing)
+#   - the job must declare environment: pypi so the OIDC token carries
+#     that environment claim (a missing environment does NOT match)
 #   - no PYPI_TOKEN / TWINE_PASSWORD is ever needed — the OIDC exchange
 #     below proves the identity of this workflow to PyPI directly.
 #
@@ -23,6 +25,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: pypi
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
