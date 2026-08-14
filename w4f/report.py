@@ -63,6 +63,12 @@ VENDOR_COLORS: dict[str, str] = {
     "huawei-cloud-cdn": _BRIGHT_BLUE,
     "baidu-cdn": _BLUE,
     "qrator": _YELLOW,
+    "360wangzhanbao": _BRIGHT_YELLOW,
+    "variti": _YELLOW,
+    "uewaf": _BRIGHT_CYAN,
+    "airee": _GREEN,
+    "jd-cloud": _GREEN,
+    "azion": _CYAN,
 }
 _VENDOR_PREFIX_COLORS: list[tuple[str, str]] = [
     ("aws-", _CYAN), ("azure-", _BRIGHT_BLUE), ("tencent-", _BRIGHT_MAGENTA),

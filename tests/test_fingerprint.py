@@ -582,3 +582,40 @@ class TestChineseEdges:
     def test_qrator_server(self):
         r = _result(headers={"server": "QRATOR"})
         assert "qrator" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_360wangzhanbao_wzws_header(self):
+        r = _result(headers={"wzws-ray": "002-1786734657.007-cache02fst-waf04fst"})
+        assert "360wangzhanbao" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_360wangzhanbao_cname(self):
+        r = _result(cname=["0417861b351234d9.qaxcloudwaf.com"])
+        assert "360wangzhanbao" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_variti_server(self):
+        r = _result(headers={"server": "Variti/0.9.3a"})
+        assert "variti" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_uewaf_server(self):
+        r = _result(headers={"server": "uewaf/4.0.5"})
+        assert "uewaf" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_airee_server(self):
+        r = _result(headers={"server": "Airee/Cloud"})
+        assert "airee" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_airee_cookie(self):
+        r = _result(cookies=["airee_visitor=1; path=/"])
+        assert "airee" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_jd_cloud_cname(self):
+        r = _result(cname=["www.example.com.s.galileo.jcloud-cdn.com"])
+        assert "jd-cloud" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_jd_cloud_qianxun_cname(self):
+        r = _result(cname=["www.example.com.gslb.qianxun.com"])
+        assert "jd-cloud" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_azion_prefix_header(self):
+        r = _result(headers={"x-azion-request-id": "e217d28c248bfb33391a838b4424599f",
+                             "x-azion-edge-location": "MIA"})
+        assert "azion" in [m["vendor"] for m in fingerprint(r)]
