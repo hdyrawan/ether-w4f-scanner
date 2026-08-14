@@ -13,7 +13,7 @@
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
-[![pypi](https://img.shields.io/pypi/v/w4f)](https://pypi.org/project/w4f/)
+[![pypi](https://img.shields.io/pypi/v/w4f?cache_bust=1)](https://pypi.org/project/w4f/)
 [![python](https://img.shields.io/badge/python-3.10--3.12-blue)](https://pypi.org/project/w4f/)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
