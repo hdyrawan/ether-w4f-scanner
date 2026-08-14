@@ -264,7 +264,7 @@ VENDORS: dict[str, dict] = {
     "haproxy": {
         "headers": {"server": r"haproxy"},
         # HAProxy stick-table persistence cookie: `<name>=!<base64>` (the `!`
-        # prefix marks a stick cookie). Observed on mbanking.example.co.id
+        # prefix marks a stick cookie). Observed on a bank's mobile host
         # (`brks_lb=!…`), where no Server header is exposed.
         "cookies": [r"^[a-zA-Z0-9_.-]+=![A-Za-z0-9+/]+"],
     },
