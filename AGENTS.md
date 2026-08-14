@@ -29,6 +29,14 @@ the tool and its documentation.
 - **No target-specific logic.** No bank names, no host lists, no per-app
   pinning knowledge. If you find yourself hardcoding a host, stop — that
   belongs in the consuming research repo, not here.
+- **This repo is CODE ONLY — never commit results or evidence.** No sweep
+  output (host lists, `--json` result trees, oracle comparisons, block-page
+  findings), no endpoint inventories, no bank/host names in code, comments,
+  tests, docs, commit messages, tags, or release bodies. The consuming
+  research repo and the user's Obsidian vault are where results live. If a
+  sweep produced something worth keeping, put it there — never here. A
+  violation in history is a `git filter-repo` purge job (see the release
+  checklist verification step).
 - **No license-borrowed detection code.** The vendor signature table was
   written from scratch. Do not copy detection rules verbatim from other WAF
   fingerprinting projects (several are restrictively licensed).
@@ -74,6 +82,22 @@ the tool and its documentation.
   tests, and publishes via OIDC (no token). Then create the GitHub Release
   (`gh release create v<version> --title ... --notes ...` from the CHANGELOG
   entry) so the releases page matches PyPI.
+- **Before ANY push (not just releases), verify the history is clean of
+  target names.** This repo is public and code-only. Run the full-history
+  grep over every commit's blobs AND commit messages — a name that only
+  lives in a comment/test (not in the domain list) is exactly what this
+  catches:
+  ```bash
+  # blobs: expect 0 hits
+  git grep -oiE "<bank|target-name-pattern>" $(git rev-list --all) | wc -l
+  # commit messages: expect 0 hits
+  git log --all --format="%s" | grep -ciE "<pattern>"
+  # any real hostnames that are not generic placeholders: expect none
+  git grep -ohE "[a-z0-9.-]+\.co\.id" $(git rev-list --all) | grep -v example | sort -u
+  ```
+  If any hit exists, the fix is `git filter-repo --force --replace-text
+  <scrub-file> --replace-message <scrub-file>` + force-push, NOT a normal
+  commit (a normal commit leaves the name in history).
 - **Pure stdlib + two optional deps.** `cryptography` (cert parsing) and
   `dnspython` (CNAME/PTR) are optional; the scanner must degrade gracefully
   without either. Never add a hard dependency.
@@ -84,8 +108,9 @@ the tool and its documentation.
   matched (`header server: cloudflare`, `netblock: 104.18.1.79 in
   104.16.0.0/13`, `cookie: incap_ses…`, …). A verdict without evidence is a
   bug. A blank verdict is "unknown edge", never "no WAF".
-- **Versioned output.** When running a sweep for documentation, commit the
-  raw JSON alongside the writeup (`--json`) and regenerate both together.
+- **Sweep output never enters this repo.** If you run a sweep for
+  documentation, the raw `--json`/`--md` and any writeup belong in the
+  consuming research repo / vault, never here (see the code-only rule).
 
 ## Known traps (kept for the next reader)
 
