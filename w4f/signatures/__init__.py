@@ -120,6 +120,10 @@ def _validate_vendor(v: dict) -> None:
 def load_signatures(package: str = __name__) -> dict[str, dict]:
     """Discover, validate, and assemble every vendor in this package.
 
+    Walks the package recursively — a vendor may live in any subpackage
+    (``cdn/cloudflare.py``, ``waf/fortiweb.py``, …) or directly under
+    ``w4f/signatures/``. Private modules (``_*``) are skipped.
+
     Returns ``{name: rules}`` where ``rules`` is the vendor dict with the
     ``name`` key stripped — the exact shape the fingerprint engine consumes.
     Raises :class:`SignatureError` on the first invalid vendor (duplicate
@@ -127,10 +131,11 @@ def load_signatures(package: str = __name__) -> dict[str, dict]:
     """
     pkg = importlib.import_module(package)
     merged: dict[str, dict] = {}
-    for info in sorted(pkgutil.iter_modules(pkg.__path__), key=lambda m: m.name):
-        if info.name.startswith("_"):
+    for info in sorted(pkgutil.walk_packages(pkg.__path__, prefix=package + "."),
+                       key=lambda m: m.name):
+        if info.name.rsplit(".", 1)[-1].startswith("_"):
             continue  # private helpers / template are not signatures
-        mod = importlib.import_module(f"{package}.{info.name}")
+        mod = importlib.import_module(info.name)
         for v in _module_vendors(mod):
             _validate_vendor(v)
             name = v["name"]

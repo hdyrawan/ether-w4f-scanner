@@ -63,6 +63,20 @@ class TestSignatureDiscovery:
         assert vendors["one-edge"]["headers"]["server"]
         assert "two-a" in vendors and "two-b" in vendors
 
+    def test_nested_subpackage_discovered(self, tmp_path, monkeypatch):
+        # a vendor in cdn/<vendor>.py must be found via recursive walk
+        from w4f.signatures import load_signatures
+        pkg = _make_pkg(tmp_path, monkeypatch)
+        sub = pkg / "cdn"
+        sub.mkdir()
+        (sub / "__init__.py").write_text("")
+        _write_mod(sub, "deep-edge", '''
+            VENDOR = {"name": "deep-edge", "headers": {"server": r"deep-edge"}}
+        ''')
+        vendors = load_signatures(pkg.name)
+        assert "deep-edge" in vendors
+        assert vendors["deep-edge"]["headers"]["server"]
+
 
 class TestSignatureValidation:
     def test_duplicate_name_rejected(self, tmp_path, monkeypatch):

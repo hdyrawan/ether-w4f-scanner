@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.25
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.26
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -133,7 +133,7 @@ python3 -m pytest           # run the test suite
 ### Verify & uninstall
 
 ```bash
-w4f --version        # e.g. "w4f 0.1.9 — passive TLS / CDN / WAF / edge fingerprinting"
+w4f --version        # e.g. "w4f 0.1.26 — passive TLS / CDN / WAF / edge fingerprinting"
 w4f --help           # full usage
 pipx uninstall w4f   # or: uv tool uninstall w4f / pip uninstall w4f
 ```
@@ -172,6 +172,16 @@ w4f --target-file hosts.txt --csv sweep.csv
 # SARIF 2.1.0 for security dashboards / GitHub Code Scanning
 w4f --target-file hosts.txt --sarif scan.sarif
 
+# WebSocket upgrade probe (RFC 6455) against a path
+w4f --target ws.example.com --ws /socket.io
+
+# gRPC health-check probe (grpc.health.v1.Health/Check)
+w4f --target grpc.example.com --grpc
+
+# pace requests: --delay N seconds between per-host submissions
+# (per-domain backoff: 429/503 doubles the delay up to 10s, success resets)
+w4f --target-file hosts.txt --delay 0.5 --csv sweep.csv
+
 # catch silent WAFs with the one-query active probe
 w4f --target api.example.com --verify
 
@@ -193,11 +203,14 @@ w4f --target api.example.com --no-http
 | `--path PATH` | HTTP path to GET (default `/`) |
 | `--timeout SECONDS` | connect/TLS/HTTP timeout per host (default 8) |
 | `--workers N` | parallel host count (default 8) |
+| `--delay SECONDS` | base pacing between per-host submissions (default 0 = as fast as possible). Per-domain adaptive backoff: a `429`/`503` doubles that domain's delay (cap 10s), a success resets it to the base. |
 | `--json FILE` | write the full machine-readable result tree to FILE |
 | `--md FILE` | write a markdown sweep (table + per-host blocks) to FILE |
 | `--csv FILE` | write a flat CSV — one row per host, primary verdict: host, port, ips, cname, verdict, confidence, signals, mtls, tls_version, alpn, spki, http_status, block, error |
 | `--sarif FILE` | write a SARIF 2.1.0 report for security dashboards / GitHub Code Scanning — one result per host, rule ids `w4f/<vendor>`, `w4f/block`, `w4f/mtls`, `w4f/probe-error`, `w4f/unknown-edge` |
 | `--no-http` | TLS/cert/DNS only, skip the HTTP request |
+| `--ws PATH` | **OPT-IN** — send an RFC 6455 WebSocket upgrade request to this path and report whether the edge answers `101` (plus `Sec-WebSocket-Accept`) |
+| `--grpc` | **OPT-IN** — send a `grpc.health.v1.Health/Check` request and report `grpc-status` / `grpc-message`, or the HTTP/2 binary-framing answer (real gRPC is h2; pairs with the ALPN observation) |
 | `--verify` | **OPT-IN active probe** — one benign `<script>` query per host; reports the WAF block page (FortiWeb / F5 ASM / Cloudflare / Imperva) |
 | `--version` | print version and exit |
 | `--quiet` | suppress the console banner and per-host blocks (for `--json`/`--md`) |
@@ -230,7 +243,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.25
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.26
 
 api.example.com:443
 ip        45.60.16.239
@@ -243,12 +256,13 @@ cert      Example Security CA
   spki    6905ab38dc27d7d6562fdbfd26cedf1238783b1ef25c76fd47245a695b3b11df
   key     RSA 2048  sha256WithRSAEncryption
 http      ERROR: [SSL: TLSV13_ALERT_CERTIFICATE_REQUIRED] tlsv13 alert certificate required
-verdict   imperva (2): cname: api.example.com.impervadns.net; netblock: 45.60.16.239 in 45.60.0.0/16
+verdict   imperva (2, 45%): cname: api.example.com.impervadns.net; netblock: 45.60.16.239 in 45.60.0.0/16
 
 shop.example.net:443
 ip        104.18.1.79, 104.18.0.79, 2606:4700::6812:4f, 2606:4700::6812:14f
 cname     shop.example.net.cdn.cloudflare.net
 tls       TLSv1.3  TLS_AES_256_GCM_SHA384  ALPN h2
+  http2   negotiated h2; GET used HTTP/1.1 (header view is the 1.1 view)
 cert      Example CA, Inc.
   san     shop.example.net, www.shop.example.net
   valid   2026-05-27 -> 2026-12-11  (118d left)
@@ -258,7 +272,7 @@ http      HTTP/1.1 404 Not Found
   hdr     server=cloudflare
   hdr     cf-cache-status=DYNAMIC
   hdr     cf-ray=a2af62ede853e78f-CGK
-verdict   cloudflare (7): header server: cloudflare; header cf-ray: ...;
+verdict   cloudflare (7, 65%): header server: cloudflare; header cf-ray: ...;
           cookie: _cfuvid=...; cname: shop.example.net.cdn.cloudflare.net;
           netblock: 104.18.1.79 in 104.16.0.0/13; netblock: 2606:4700::6812:4f in ...
 ```
@@ -266,10 +280,17 @@ verdict   cloudflare (7): header server: cloudflare; header cf-ray: ...;
 (The hosts above are illustrative — run it against any real host to see your
 own output.)
 
-Colors are enabled automatically when stdout is a TTY — host in cyan, vendor
-verdict in green, mTLS/errors in red, `--verify` block findings in yellow.
-Disable with `NO_COLOR` (honoured for output, though console blocks stay
-plain text by design — no markdown).
+Colors are enabled automatically when stdout is a TTY (piped output is plain
+text), and disabled with `NO_COLOR`. The host line is cyan, mTLS/errors red,
+`--verify` block findings yellow — and each **vendor name has its own color**
+so a glance names the edge: Cloudflare bright-yellow, Akamai blue, Fastly
+red, AWS family cyan, Azure family bright-blue, Tencent family
+bright-magenta, Google GFE magenta, F5/netscaler bright-red, FortiWeb
+bright-yellow, Kong bright-cyan, and plain origin stacks (nginx, Apache,
+IIS, Varnish, …) are **dimmed** so the edge vs origin distinction is
+instantly visible. The color map is in `w4f/report.py` (`VENDOR_COLORS`) —
+a new vendor gets a green default; add an entry there if it deserves its
+own hue.
 
 ## What it reports
 
@@ -281,15 +302,26 @@ plain text by design — no markdown).
 | leaf cert: subject, issuer org, SAN, validity, SHA-256, **SPKI-SHA-256**, key/sig | TLS handshake |
 | mTLS flag (server wants a client cert, incl. TLS 1.3 post-handshake) | TLS alert / first app data |
 | HTTP status + interesting headers | one GET |
-| CDN/WAF verdict + matching evidence | signature match |
+| WebSocket upgrade support (`--ws`) | RFC 6455 upgrade request |
+| gRPC health-check support (`--grpc`) | grpc.health.v1.Health/Check |
+| CDN/WAF verdict + matching evidence + confidence | signature match |
 | `block` — WAF block page (vendor, title, status) | `--verify` active probe |
 
 ## Reading a verdict
 
 Vendor names are matched with weights: a host behind nginx directly gets
 `nginx` only; a host behind Imperva gets `imperva` from headers **and** cert
-**and** netblock, each signal listed as evidence with a count
-(`imperva (2)`). The top match is the one with the most evidence.
+**and** netblock, each signal listed as evidence with a count and a
+confidence percentage (`imperva (2, 45%)`). The top match is the one with
+the most evidence.
+
+Every match carries a **confidence (0–100)** from weighted signal
+categories (netblock 30, cert issuer 25, CNAME 20, PTR 15, headers 7,
+cookies 3 — each category counted once, per-vendor `weights` overrides
+allowed). High confidence = almost certainly that vendor; a single weak
+header (`nginx` alone = 7) is a hint, not a verdict. See
+[`docs/vendor-signatures.md`](docs/vendor-signatures.md) for the full
+weight table and the "why" behind each signal.
 
 - **A blank verdict** means the edge is not in the signature table — treat it
   as "unknown origin, no WAF/CDN signature", **not** "no WAF".
@@ -323,56 +355,42 @@ Vendor names are matched with weights: a host behind nginx directly gets
   active MITM between w4f and the target is not detected; the tool reports
   what it was actually presented.
 
-**v0.1.14 note — AWS Global Accelerator detected.** The AWS edge that
-resolves to Global Accelerator ranges (`15.197.0.0/16`, `3.33.0.0/16`,
-PTR `*.awsglobalaccelerator.com`) has no `elb.amazonaws.com` CNAME, so it
-fell through every AWS rule. Found via the Indonesian bank subdomain sweep
-(15.197.x/3.33.x, 301s to a corporate portal). Added
-`aws-global-accelerator` netblock + PTR rules.
-
-**v0.1.13 note — Kong API gateway detected.** `X-Kong-Upstream-Latency` /
-`X-Kong-Proxy-Latency` headers (and `Server: kong` on older builds). Added
-`kong` vendor rule.
-
-**v0.1.12 note — AWS WAF on CloudFront is now detected.** Indonesian-ecosystem
-hunt (user-led: example-hospital.com) found CloudFront + **AWS WAF managed
-rules** silently blocking attack-shaped queries with `403` +
-`x-cache: Error from cloudfront` + the block page "ERROR: The request could
-not be satisfied / Request blocked". Passive
-scan sees only `aws-cloudfront` (a normal GET returns 200); `--verify` now
-matches the AWS WAF block page (`aws-waf`), and the passive `aws-waf` rule
-fires on the 403 + error-cache shape via a new `_status` pseudo-header.
-Confirmed deployments: example-hospital.com, a bank's API host, example.com,
-example-travel.com. **Do not write "CloudFront, no WAF" for a host without a
-`--verify` run** — AWS WAF is silent to passive probes, same trap as FortiWeb.
-
-**v0.1.11 note — internet-wide accuracy sweep.** A 138-host cross-check
-against an independent active WAF detector closed the two biggest accuracy
-gaps: (1) **redirect-following** — most sites 301 from the apex to `www`
-and only the final response carries the WAF, so w4f now follows up to 5
-hops (`example-news.com` apex said `varnish`, `www.example-news.com` is Akamai Kona);
-(2) **Akamai Kona signals** — `AkamaiGHost`, `akamai-grn`, `x-grn`,
-`x-akamai-transformed`, `akamai-request-bc` (12 hosts were missed). New
-vendors: `tengine` (Alibaba), `tencent-gateway` (stgw/tRPC-Gateway),
-`bytedance` (TikTok TLB), `pepyaka` (Wix), `azure-app-service`
-(ARRAffinity). Disagreements vs the oracle dropped 31 → 6, and the 6
-remainders are semantic-layer differences where w4f is more specific
-(e.g. TikTok is ByteDance's edge, not the Akamai node in its chain).
-Evidence: `experiments/accuracy-sweep-2026-08-14/`.
+**AWS WAF on CloudFront is silent to passive probes** — a normal GET returns
+200 and only `--verify` sees the 403 block page. **Do not write "CloudFront,
+no WAF" for a host without a `--verify` run** — same trap as FortiWeb (which
+serves plain nginx to normal requests). See
+[`docs/vendor-signatures.md`](docs/vendor-signatures.md) and the
+[CHANGELOG](CHANGELOG.md) for the version-by-version detection additions
+(AWS Global Accelerator, Kong, AWS WAF, Tencent EdgeOne, squarespace, ...).
 
 ### Signature coverage
 
-Cloudflare, Imperva, Akamai (incl. Kona WAF signals), AWS CloudFront / WAF /
-ELB / S3 / EC2, Fastly, Azure Front Door / Application Gateway / App
-Service, Google GFE / Cloud Armor, F5 BIG-IP, NetScaler, GTM/GSLB DNS LB,
-Sucuri, StackPath, OpenResty, nginx, Apache, HAProxy (server + stick
-cookie), Envoy, Caddy, LiteSpeed, Varnish, ArvanCloud, Tencent EdgeOne /
-Tencent CDN / Tencent gateway (stgw/tRPC), Alibaba Tengine, ByteDance TLB,
-Wix Pepyaka, Baidu Yunjiasu, FortiWeb, ModSecurity, NAXSI, Wallarm,
-Wordfence, Zenedge, Zscaler, DDoS-Guard, Edgecast, MaxCDN, KeyCDN,
-Barracuda, Huawei Cloud WAF, SafeDog — plus block-page signatures for
-FortiWeb (EN + localized ID), F5 ASM, Cloudflare, Imperva and **AWS WAF**
-("ERROR: The request could not be satisfied") under `--verify`.
+**70 vendors** across six families — each one a file under
+`w4f/signatures/` (copy `_template.py` to add one; see
+[`docs/vendor-signatures.md`](docs/vendor-signatures.md) for the
+contributor guide):
+
+- **CDN/edge** (24): Cloudflare, Cloudflare WAF, Imperva, Akamai (incl.
+  Kona + Bot Manager `E3D=`), AWS CloudFront / WAF / ELB / Global
+  Accelerator / S3 / EC2, Fastly (+ WAF/Signal Sciences), Azure Front Door,
+  Azure App Gateway, ArvanCloud, Tencent EdgeOne / CDN, Baidu Yunjiasu,
+  Edgecast, MaxCDN, KeyCDN, StackPath, Zenedge, DDoS-Guard.
+- **WAF/protection** (16): FortiWeb, F5 BIG-IP ASM, NetScaler, GTM/GSLB,
+  Sucuri, ModSecurity, NAXSI, Wallarm, Wordfence, Zscaler, Google Cloud
+  Armor, Radware, Reblaze, Barracuda, Huawei Cloud WAF, SafeDog.
+- **Bot management** (5): DataDome, PerimeterX/HUMAN, Kasada, Shape
+  Security, Arkose.
+- **API gateways / platform edges** (14): Kong, Tyk, Apigee, Azure API
+  Management, Tencent gateway (stgw/tRPC), Envoy, HAProxy, Tengine,
+  OpenResty, Cloudflare Workers, Vercel, Google Cloud Run, AWS App Runner,
+  SGW (Shopee/Sea).
+- **Plain origins** (6): nginx, Apache, IIS, Caddy, LiteSpeed, Varnish.
+- **Platforms** (5): Google GFE, Wix Pepyaka, Squarespace, Azure App
+  Service, ByteDance TLB.
+
+Plus `--verify` block-page signatures for FortiWeb (EN + localized ID),
+F5 ASM, Cloudflare, Imperva and **AWS WAF** ("ERROR: The request could not
+be satisfied"), Akamai Kona, Sucuri, Wordfence, Wallarm.
 
 Signatures are a snapshot; a new edge version can change headers, so re-run
 sweeps before trusting a blank verdict for a host whose writeup is old.
@@ -399,7 +417,7 @@ errors are a field, not an exception — a bad host never aborts the run:
       "http": { "status": "HTTP/1.1 404 Not Found", "headers": { "server": "cloudflare", "cf-ray": "a2af..." }, "set-cookie-list": [] }
     },
     "verdict": [
-      { "vendor": "cloudflare", "signals": 7, "evidence": ["header server: cloudflare", "cname: api.example.com.cdn.cloudflare.net", ...] }
+      { "vendor": "cloudflare", "signals": 7, "confidence": 65, "evidence": ["header server: cloudflare", "cname: api.example.com.cdn.cloudflare.net", ...] }
     ],
     "block": null
   }
@@ -441,13 +459,18 @@ pip install .[dev]
 python -m pytest
 ```
 
-71 tests, offline — a local TLS server with a self-signed cert exercises the
+204 tests, offline — a local TLS server with a self-signed cert exercises the
 real socket path without touching the internet. Coverage: fingerprint
 matching against real-world cases from the Indonesian bank sweep +
-false-positive guards; the `--verify` block-page matcher (FortiWeb EN/ID,
-F5 ASM, Cloudflare, Imperva, the title-at-end-of-39KB-body trap); vendor
-table sanity (every regex compiles, every netblock valid); CLI/report/banner;
-and end-to-end `probe_one` against the local server.
+false-positive guards (requires-gate positives/negatives, Cloudflare-WAF
+low-confidence, fastly cache-node vs marketing-site, Jakarta CloudFront
+netblock); the `--verify` block-page matcher (FortiWeb EN/ID, F5 ASM,
+Cloudflare, Imperva, AWS WAF, Akamai Kona, the title-at-end-of-39KB-body
+trap); the modular signature loader (package discovery, nested subpackages,
+duplicate-name / bad-regex / missing-name / unknown-key / bad-netblock
+rejection, `W4F_SIGNATURES` env override); rate limiting; WS/gRPC probes;
+SARIF schema shape; CSV/JSON/MD writers; CLI/report/banner (incl. per-vendor
+verdict colors); and end-to-end `probe_one` against the local server.
 
 CI (GitHub Actions) runs the suite on Python 3.10/3.11/3.12 with full extras,
 a no-optional-deps job proving graceful degradation, and a CLI smoke check.

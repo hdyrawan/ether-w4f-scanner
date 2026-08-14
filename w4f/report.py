@@ -16,10 +16,80 @@ _CYAN = "\033[36m"
 _GREEN = "\033[32m"
 _YELLOW = "\033[33m"
 _RED = "\033[31m"
+_MAGENTA = "\033[35m"
+_BLUE = "\033[34m"
+_BRIGHT_YELLOW = "\033[93m"
+_BRIGHT_CYAN = "\033[96m"
+_BRIGHT_BLUE = "\033[94m"
+_BRIGHT_MAGENTA = "\033[95m"
+_BRIGHT_RED = "\033[91m"
 _DIM = "\033[2m"
 _RESET = "\033[0m"
 
+# Per-vendor verdict colors so a glance names the edge. Exact name wins,
+# then a family prefix (aws-*, azure-*, tencent-*), then the default.
+VENDOR_COLORS: dict[str, str] = {
+    "cloudflare": _BRIGHT_YELLOW,          # brand orange ≈ bright yellow
+    "cloudflare-waf": _BRIGHT_YELLOW,
+    "akamai": _BLUE,
+    "fastly": _RED,
+    "fastly-waf": _RED,
+    "imperva": _YELLOW,
+    "aws-cloudfront": _CYAN,
+    "aws-waf": _CYAN,
+    "azure-frontdoor": _BRIGHT_BLUE,
+    "google-gfe": _MAGENTA,
+    "gcp-armor": _MAGENTA,
+    "f5": _BRIGHT_RED,
+    "netscaler": _BRIGHT_RED,
+    "fortiweb": _BRIGHT_YELLOW,
+    "sucuri": _GREEN,
+    "kong": _BRIGHT_CYAN,
+    "vercel": _BRIGHT_MAGENTA,
+    "squarespace": _BRIGHT_MAGENTA,
+}
+_VENDOR_PREFIX_COLORS: list[tuple[str, str]] = [
+    ("aws-", _CYAN), ("azure-", _BRIGHT_BLUE), ("tencent-", _BRIGHT_MAGENTA),
+]
+# Plain origin stacks are DIM (they are the origin, not the edge).
+_ORIGIN_VENDORS = {
+    "nginx", "apache", "iis", "caddy", "litespeed", "varnish",
+    "envoy", "haproxy", "tengine", "openresty", "sgw",
+}
+
 _LABEL = 10  # column width for the left-hand label
+
+
+def _color_enabled() -> bool:
+    """Colors when stdout is a TTY and NO_COLOR is not set."""
+    import os
+    import sys
+    if os.environ.get("NO_COLOR"):
+        return False
+    try:
+        return sys.stdout.isatty()
+    except Exception:
+        return False
+
+
+def _wrap(text: str, code: str) -> str:
+    """Wrap text in color+reset, or return it plain when colors are off."""
+    if not _color_enabled():
+        return text
+    return f"{code}{text}{_RESET}"
+
+
+def _vendor_color(vendor: str) -> str:
+    if not _color_enabled():
+        return ""
+    if vendor in VENDOR_COLORS:
+        return VENDOR_COLORS[vendor]
+    if vendor in _ORIGIN_VENDORS:
+        return _DIM
+    for prefix, color in _VENDOR_PREFIX_COLORS:
+        if vendor.startswith(prefix):
+            return color
+    return _GREEN
 
 
 def _row(label: str, value: str) -> str:
@@ -35,19 +105,22 @@ def fmt_verdict(verdict: list[dict]) -> str:
 
 
 def _verdict_line(ver: list[dict]) -> str:
-    """Color the vendor names; plain text otherwise."""
+    """Color vendor names per-vendor (a glance names the edge); plain otherwise."""
     if not ver:
-        return f"{_row('verdict', _DIM + 'no signature matched (unknown edge)' + _RESET)}"
+        return _row("verdict", _wrap("no signature matched (unknown edge)", _DIM))
     parts = []
     for m in ver:
         ev = "; ".join(m["evidence"])
-        parts.append(f"{_GREEN}{m['vendor']}{_RESET} {_DIM}({m['signals']}, {m.get('confidence', 0)}%){_RESET}: {ev}")
+        color = _vendor_color(m["vendor"])
+        name = _wrap(m["vendor"], color) if color else m["vendor"]
+        counts = _wrap(f"({m['signals']}, {m.get('confidence', 0)}%)", _DIM)
+        parts.append(f"{name} {counts}: {ev}")
     return _row("verdict", "  |  ".join(parts))
 
 
 def fmt_block(r: dict) -> str:
     if r.get("error"):
-        return f"{r['hostport']}\n{_row('error', _RED + r['error'] + _RESET)}"
+        return f"{r['hostport']}\n{_row('error', _wrap(r['error'], _RED))}"
 
     res = r.get("resolved") or {}
     tls = r.get("tls") or {}
@@ -55,7 +128,7 @@ def fmt_block(r: dict) -> str:
     ver = r.get("verdict") or []
 
     lines = [
-        _CYAN + r["hostport"] + _RESET,
+        _wrap(r["hostport"], _CYAN),
         _row("ip", ", ".join(res.get("ips", ["-"]))),
     ]
     if res.get("ptr"):
@@ -70,9 +143,9 @@ def fmt_block(r: dict) -> str:
         )
     )
     if r.get("http2_negotiated"):
-        lines.append(_row("  http2", _YELLOW + "negotiated h2; GET used HTTP/1.1 (header view is the 1.1 view)" + _RESET))
+        lines.append(_row("  http2", _wrap("negotiated h2; GET used HTTP/1.1 (header view is the 1.1 view)", _YELLOW)))
     if tls.get("mtls"):
-        lines.append(_row("mtls", _RED + "server wants a CLIENT certificate" + _RESET))
+        lines.append(_row("mtls", _wrap("server wants a CLIENT certificate", _RED)))
     if cert.get("subject"):
         subj = cert.get("subject") or ""
         lines.append(_row("cert", f"{cert.get('issuer_org') or cert.get('issuer')}"))
@@ -90,20 +163,22 @@ def fmt_block(r: dict) -> str:
     if r.get("ws"):
         ws = r["ws"]
         if ws.get("upgrade_supported"):
-            lines.append(_row("ws", _GREEN + f"101 Switching Protocols (accept: {ws.get('sec_websocket_accept') or '-'})" + _RESET))
+            lines.append(_row("ws", _wrap(f"101 Switching Protocols (accept: {ws.get('sec_websocket_accept') or '-'})", _GREEN)))
         elif ws.get("status"):
             lines.append(_row("ws", f"upgrade {ws['status']}"))
         elif ws.get("error"):
-            lines.append(_row("ws", _DIM + ws["error"] + _RESET))
+            lines.append(_row("ws", _wrap(ws["error"], _DIM)))
     if r.get("grpc"):
         g = r["grpc"]
         if g.get("grpc_supported"):
-            lines.append(_row("grpc", _GREEN + f"supported (grpc-status {g.get('grpc_status', '?')})" + _RESET
-                              + (f"  {g.get('grpc_message')}" if g.get("grpc_message") else "")))
+            msg = f"supported (grpc-status {g.get('grpc_status', '?')})"
+            if g.get("grpc_message"):
+                msg += f"  {g['grpc_message']}"
+            lines.append(_row("grpc", _wrap(msg, _GREEN)))
         elif g.get("status"):
             lines.append(_row("grpc", f"rejected {g['status']}"))
         elif g.get("error"):
-            lines.append(_row("grpc", _DIM + g["error"] + _RESET))
+            lines.append(_row("grpc", _wrap(g["error"], _DIM)))
     if cert.get("key_type"):
         lines.append(
             _row("  key", f"{cert.get('key_type')} {cert.get('key_size','')}  {cert.get('signature')}")
@@ -131,9 +206,10 @@ def fmt_block(r: dict) -> str:
     blk = r.get("block")
     if blk:
         lines.append(
-            _row("block", _YELLOW + f"{blk['vendor']} — {blk['title']}"
-                 f" ({blk.get('status','')})"
-                 f" [{blk.get('confidence', 95)}% conf]" + _RESET)
+            _row("block", _wrap(
+                f"{blk['vendor']} — {blk['title']} ({blk.get('status','')})"
+                f" [{blk.get('confidence', 95)}% conf]",
+                _YELLOW))
         )
     return "\n".join(lines)
 

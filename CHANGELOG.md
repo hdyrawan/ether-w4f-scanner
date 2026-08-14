@@ -5,6 +5,37 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.26] — 2026-08-14
+
+Per-vendor verdict colors + README/docs refresh.
+
+- **Vendor names are now colored per-vendor** so a glance names the edge
+  (Cloudflare bright-yellow, Akamai blue, Fastly red, AWS family cyan,
+  Azure bright-blue, Tencent bright-magenta, GFE magenta, F5 bright-red,
+  Kong bright-cyan, FortiWeb bright-yellow, Imperva yellow). Plain origin
+  stacks (nginx, Apache, IIS, Varnish, Envoy, HAProxy, …) are **dimmed**
+  so edge vs origin is visible at a glance. Default green for new vendors.
+  Map: `w4f/report.py` `VENDOR_COLORS` (+ family-prefix fallback).
+- **Colors now honor the documented TTY + NO_COLOR contract**: previously
+  ANSI codes were emitted unconditionally (even piped); now they only appear
+  when stdout is a TTY and `NO_COLOR` is unset — piped output is genuinely
+  plain (README already claimed this).
+- **Signatures restructured to per-vendor files under per-category
+  folders**: `w4f/signatures/{cdn,waf,bot,gateways,origins,platforms}/<vendor>.py`
+  (70 files), loader walks subpackages recursively. The assembled table is
+  byte-identical to v0.1.24/25 (verified by diff) — behavior unchanged.
+  A one-time `scripts/split_signatures.py` did the mechanical split.
+- **README refresh**: current version banner; new flags (`--delay`,
+  `--ws`, `--grpc`) in usage + table; example output shows confidence
+  (`cloudflare (7, 65%)`) and the h2 note; per-vendor color section;
+  full 70-vendor coverage list by family; stale v0.1.11–14 notes
+  consolidated into a pointer to the CHANGELOG; testing section now 204.
+- **Docs**: `docs/vendor-signatures.md` updated to the nested layout +
+  a "Console colors per vendor" reference table.
+
++5 tests (204 total): per-vendor distinctness, NO_COLOR off, non-TTY plain,
+  nested-subpackage discovery.
+
 ## [0.1.25] — 2026-08-14
 
 Packaging fix: the `w4f.signatures` subpackage was excluded from the wheel

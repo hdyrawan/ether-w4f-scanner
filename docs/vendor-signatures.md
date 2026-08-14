@@ -11,21 +11,36 @@ evidence, run `w4f --target <host>` and read the `verdict` line.
 
 ```
 w4f/signatures/
-  __init__.py     # discovery + validation + assembly (the loader)
-  _template.py    # documented example — COPY THIS to add a vendor
-  cdn.py          # CDN/edge family (cloudflare, akamai, fastly, aws-*, ...)
-  waf.py          # WAF/protection family (fortiweb, f5, sucuri, ...)
-  bot.py          # bot-management (datadome, perimeterx, kasada, ...)
-  gateways.py     # API gateways / platform edges (kong, tyk, vercel, ...)
-  origins.py      # plain origin servers (nginx, apache, iis, varnish, ...)
-  platforms.py    # remaining platform edges (google-gfe, wix, squarespace, ...)
+  __init__.py       # discovery + validation + assembly (the loader)
+  _template.py      # documented example — COPY THIS to add a vendor
+  cdn/              # CDN/edge family — one file per vendor
+    cloudflare.py   #   cloudflare, akamai, fastly, aws-cloudfront, ...
+    akamai.py
+    ...
+  waf/              # WAF/protection family
+    fortiweb.py     #   fortiweb, f5, sucuri, modsecurity, ...
+    f5.py
+    ...
+  bot/              # bot-management
+    datadome.py     #   datadome, perimeterx, kasada, ...
+    ...
+  gateways/         # API gateways / platform edges
+    kong.py         #   kong, tyk, vercel, envoy, haproxy, ...
+    ...
+  origins/          # plain origin servers
+    nginx.py        #   nginx, apache, iis, varnish, ...
+    ...
+  platforms/        # remaining platform edges
+    google-gfe.py   #   google-gfe, wix, squarespace, ...
+    ...
 ```
 
 A vendor is a dict with a `name` plus optional signal keys. A module may
 export `VENDOR` (single dict) or `VENDORS` (list of dicts). The loader:
 
-1. imports every non-private module under the package (`_`-prefixed files
-   are ignored — `_template.py` is never loaded as a signature),
+1. imports every non-private module under the package recursively (`_`-prefixed
+   files are ignored — `_template.py` is never loaded as a signature; a vendor
+   may live in any subpackage or directly under the package),
 2. validates each vendor (unique `name`, known keys only, compilable
    regexes, valid `requires`/`weights`/netblocks) — a bad signature fails
    fast with `SignatureError` at import time,
@@ -174,6 +189,33 @@ verdict  cloudflare (5, 82%): header server: cloudflare; header cf-ray: …;
 `(5, 82%)` = five evidence strings, 82% confidence. Every evidence string
 names its category so you can judge it yourself.
 
+## Console colors per vendor
+
+On a TTY the vendor name in the verdict line is colored so a glance names
+the edge. The map lives in `w4f/report.py` (`VENDOR_COLORS`); exact name
+wins, then a family prefix (`aws-*`, `azure-*`, `tencent-*`), then the
+default green:
+
+| color | vendors |
+|---|---|
+| bright yellow | Cloudflare, Cloudflare WAF, FortiWeb |
+| blue | Akamai |
+| red | Fastly (+ WAF) |
+| cyan | AWS family (CloudFront/WAF/ELB/…) |
+| bright blue | Azure family (Front Door/AppGW/…) |
+| bright magenta | Tencent family, Vercel, Squarespace |
+| magenta | Google GFE, GCP Armor |
+| bright red | F5, NetScaler |
+| bright cyan | Kong |
+| yellow | Imperva |
+| dim | plain origins (nginx, Apache, IIS, Varnish, Envoy, HAProxy, …) |
+| green | everything else (default) |
+
+Plain origin stacks are deliberately **dimmed** so the edge-vs-origin
+distinction is visible at a glance. A new vendor gets green by default; add
+an entry to `VENDOR_COLORS` only when it deserves its own hue. Piped output
+and `NO_COLOR` are always plain.
+
 ## Adding a vendor (contributor guide)
 
 A vendor is added by a PR that touches **only** files under
@@ -181,9 +223,9 @@ A vendor is added by a PR that touches **only** files under
 confidence engine.
 
 1. **Copy the template**: `w4f/signatures/_template.py` → a new file
-   `w4f/signatures/<vendor>.py` (or add the dict to the matching family
-   file — `cdn.py`, `waf.py`, `bot.py`, `gateways.py`, `origins.py`,
-   `platforms.py`).
+   `w4f/signatures/<category>/<vendor>.py` (category = the family that fits:
+   `cdn/`, `waf/`, `bot/`, `gateways/`, `origins/`, `platforms/`; create the
+   folder with an `__init__.py` if it does not exist).
 2. **Fill in what you observed.** Set `name` (unique), then only the
    signal keys you actually saw the edge emit. Delete unused fields — a
    field must not be present with an empty value.

@@ -66,6 +66,39 @@ class TestFmtBlock:
         assert "fortiweb" in block
 
 
+class TestVendorColors:
+    def test_distinct_colors_per_vendor(self):
+        # a glance must name the edge: the big vendors get distinct hues,
+        # plain origins are dim, family prefixes (aws-*) share a hue
+        from w4f.report import _vendor_color
+        import sys as _sys
+        from unittest import mock
+        class T:
+            def isatty(self): return True
+            def write(self, s): pass
+        with mock.patch.object(_sys, "stdout", T()):
+            colors = {v: _vendor_color(v) for v in
+                      ["cloudflare", "akamai", "fastly", "nginx", "aws-waf",
+                       "aws-cloudfront", "kong"]}
+        assert colors["cloudflare"] != colors["akamai"]
+        assert colors["cloudflare"] != colors["fastly"]
+        assert colors["nginx"] == "\033[2m"          # origin = dim
+        assert colors["aws-waf"] == colors["aws-cloudfront"]  # family prefix
+
+    def test_no_color_env_disables(self, monkeypatch):
+        from w4f.report import _vendor_color
+        monkeypatch.setenv("NO_COLOR", "1")
+        assert _vendor_color("cloudflare") == ""
+
+    def test_non_tty_is_plain(self):
+        # pytest capture is not a TTY — verdict line must be plain
+        from w4f.report import _verdict_line
+        line = _verdict_line([{"vendor": "cloudflare", "signals": 3,
+                               "confidence": 82, "evidence": []}])
+        assert "\033[" not in line
+        assert "cloudflare (3, 82%)" in line
+
+
 class TestMdDoc:
     def test_markdown_preserved(self):
         doc = md_doc([_result_with_verdict()])
