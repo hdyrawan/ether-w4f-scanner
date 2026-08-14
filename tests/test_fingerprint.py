@@ -40,10 +40,10 @@ class TestRealWorldPositives:
         names = [m["vendor"] for m in fingerprint(r)]
         assert "cloudflare" in names
 
-    def test_tencent_edgeone_aquarius(self):
+    def test_tencent_edgeone_cname(self):
         r = _result(
             ips=["43.174.196.219"],
-            cname=["aquarius.EXAMPLE_BANK.co.id.eo.dnse4.com"],
+            cname=["host.example.com.eo.dnse4.com"],
             headers={"eo-log-uuid": "17946984068454628305"},
         )
         names = [m["vendor"] for m in fingerprint(r)]

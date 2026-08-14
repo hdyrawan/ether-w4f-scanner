@@ -95,7 +95,7 @@ class TestRegexSanity:
 
     def test_tencent_edgeone_cname(self):
         rx = re.compile(VENDORS["tencent-edgeone"]["cname"], re.I)
-        assert rx.search("aquarius.EXAMPLE_BANK.co.id.eo.dnse4.com")
+        assert rx.search("host.example.com.eo.dnse4.com")
         assert rx.search("foo.cdn.dnsv1.com.cn")
 
 

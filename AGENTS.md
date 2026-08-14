@@ -114,7 +114,7 @@ the tool and its documentation.
    fleet look unprotected. F5 detection needs the `TS[a-fA-F0-9]{6,12}=`
    cookie (6–12 hex chars; shorter patterns miss the 10-char builds).
 7. **Keep the signature table ahead of the research, not behind it.**
-   `aquarius.EXAMPLE_BANK.co.id` reported "unknown edge" through v0.1.1 even
+   A bank's EdgeOne-fronted host reported "unknown edge" through v0.1.1 even
    though the consuming research had already documented the Tencent EdgeOne
    edge (`eo-log-uuid`/`eo-cache-status` headers, `eo.dnse4.com` CNAME).
    When a sweep verdict contradicts an existing endpoint write-up, that is a

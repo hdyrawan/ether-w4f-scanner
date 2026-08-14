@@ -289,8 +289,8 @@ VENDORS: dict[str, dict] = {
     "tencent-edgeone": {
         # Tencent EdgeOne (international CDN/WAF, ex-CDN solution). Decisive:
         # the `eo-log-uuid` response header and the `eo.dnse4.com` CNAME.
-        # Observed on aquarius.EXAMPLE_BANK.co.id (Bank Saqu, 2026-08-14): CNAME
-        # aquarius.EXAMPLE_BANK.co.id.eo.dnse4.com, header `eo-log-uuid`, HTTP 567
+        # Observed on a bank's EdgeOne-fronted host (2026-08-14): CNAME
+        # host.example.com.eo.dnse4.com, header `eo-log-uuid`, HTTP 567
         # on bare GET. Tencent Cloud CDN (mainland) uses *.cdn.dnsv1.com.cn.
         "headers": {"eo-log-uuid": None, "eo-cache-status": None, "server": r"edgeone|tencent"},
         "cname": r"eo\.dnse4\.com|edgeone|dnsv1\.com|tencentcs\.com|tcdn",
