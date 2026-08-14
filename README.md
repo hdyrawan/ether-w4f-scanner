@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.11
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.12
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -203,7 +203,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.11
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.12
 
 api.example.com:443
 ip        45.60.16.239
@@ -272,6 +272,18 @@ Vendor names are matched with weights: a host behind nginx directly gets
 - **`--verify` findings** are reported separately (`block fortiweb — ...`)
   so the passive and active layers never blur.
 
+**v0.1.12 note — AWS WAF on CloudFront is now detected.** Indonesian-ecosystem
+hunt (user-led: example-hospital.com) found CloudFront + **AWS WAF managed
+rules** silently blocking attack-shaped queries with `403` +
+`x-cache: Error from cloudfront` + the block page "ERROR: The request could
+not be satisfied / Request blocked" — the same edge as bank-example.co.id. Passive
+scan sees only `aws-cloudfront` (a normal GET returns 200); `--verify` now
+matches the AWS WAF block page (`aws-waf`), and the passive `aws-waf` rule
+fires on the 403 + error-cache shape via a new `_status` pseudo-header.
+Confirmed deployments: example-hospital.com, bank-example.co.id, example.com,
+example-travel.com. **Do not write "CloudFront, no WAF" for a host without a
+`--verify` run** — AWS WAF is silent to passive probes, same trap as FortiWeb.
+
 **v0.1.11 note — internet-wide accuracy sweep.** A 138-host cross-check
 against an independent active WAF detector closed the two biggest accuracy
 gaps: (1) **redirect-following** — most sites 301 from the apex to `www`
@@ -297,7 +309,8 @@ Tencent CDN / Tencent gateway (stgw/tRPC), Alibaba Tengine, ByteDance TLB,
 Wix Pepyaka, Baidu Yunjiasu, FortiWeb, ModSecurity, NAXSI, Wallarm,
 Wordfence, Zenedge, Zscaler, DDoS-Guard, Edgecast, MaxCDN, KeyCDN,
 Barracuda, Huawei Cloud WAF, SafeDog — plus block-page signatures for
-FortiWeb (EN + localized ID), F5 ASM, Cloudflare and Imperva under `--verify`.
+FortiWeb (EN + localized ID), F5 ASM, Cloudflare, Imperva and **AWS WAF**
+("ERROR: The request could not be satisfied") under `--verify`.
 
 Signatures are a snapshot; a new edge version can change headers, so re-run
 sweeps before trusting a blank verdict for a host whose writeup is old.

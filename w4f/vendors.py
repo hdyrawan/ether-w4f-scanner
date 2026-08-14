@@ -75,8 +75,14 @@ VENDORS: dict[str, dict] = {
         ],
     },
     "aws-waf": {
+        # Two shapes: (1) ALB/API-GW WAF headers (x-amz-* / x-blocked-by-waf),
+        # (2) CloudFront + AWS WAF managed rules — the edge answers 403 with
+        # "x-cache: Error from cloudfront" on an attack-shaped request
+        # (bank-example.co.id, example-hospital.com). The status is exposed as the
+        # pseudo-header _status by fingerprint().
         "headers": {"x-amz-id": None, "x-amz-request-id": None,
-                    "x-blocked-by-waf": r"awsmanagedrules|blocked_by_custom_response"},
+                    "x-blocked-by-waf": r"awsmanagedrules|blocked_by_custom_response",
+                    "_status": r"403", "x-cache": r"error from cloudfront"},
         "cookies": [r"^aws\.?alb="],
     },
     "aws-elb": {

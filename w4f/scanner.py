@@ -349,7 +349,14 @@ def fingerprint(result: dict) -> list[dict]:
     from w4f.vendors import VENDORS, vendor_nets
 
     http_layer = (result.get("tls") or {}).get("http") or result.get("http") or {}
-    headers = http_layer.get("headers") or {}
+    headers = dict(http_layer.get("headers") or {})
+    # expose the HTTP status as a pseudo-header so rules can match on it
+    # (e.g. aws-waf = 403 + x-cache: Error from cloudfront). None when no GET.
+    status = http_layer.get("status") or ""
+    if status:
+        m = re.search(r"\s(\d{3})\s", status)
+        if m:
+            headers["_status"] = m.group(1)
     set_cookies = http_layer.get("set-cookie-list") or []
     cert = result.get("cert") or {}
     cert_text = " ".join([
@@ -456,6 +463,12 @@ def match_block_page(title: str, head_text: str, body_text: str, status: str) ->
         return {"vendor": "cloudflare", "title": title, "status": status}
     if "incapsula" in body_text or "incap_ses" in head_text:
         return {"vendor": "imperva", "title": title, "status": status}
+    # AWS CloudFront + AWS WAF: "ERROR: The request could not be satisfied"
+    # with "Request blocked" — the WAF managed-rule 403 (XSS/SQLi rules on
+    # the edge). Same signature on bank-example.co.id and example-hospital.com.
+    if ("the request could not be satisfied" in t or "request blocked" in body_text) \
+            and ("cloudfront" in body_text or "amazon" in body_text):
+        return {"vendor": "aws-waf", "title": title, "status": status}
     return None
 
 

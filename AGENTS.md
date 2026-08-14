@@ -48,11 +48,18 @@ the tool and its documentation.
   trailing `@` endmarks stripped, all 11 rows kept) — do not "improve" the
   layout, it must match taag.
 - **Testing is mandatory before a release.** `python -m pytest` runs the
-  offline suite (83 tests; local TLS server, no internet). The vendor
+  offline suite (87 tests; local TLS server, no internet). The vendor
   signature table has per-regex sanity tests — when adding a vendor or
   signature, add a positive AND a negative case to `tests/`. The
   `--verify` block-page matcher tests the two field traps (title at end of
   body, localized titles). CI runs 3.10/3.11/3.12 + a no-optional-deps job.
+- **AWS WAF is silent to passive probes.** CloudFront + AWS WAF managed
+  rules answer a normal GET with 200 and only block attack-shaped queries
+  with 403 + `x-cache: Error from cloudfront` (block page "ERROR: The
+  request could not be satisfied"). Passive `aws-waf` fires on the
+  403+error-cache shape via the `_status` pseudo-header; `--verify` matches
+  the block page. Never write "CloudFront, no WAF" without a `--verify`
+  run (same trap as FortiWeb).
 - **http_get follows redirects (apex → www).** The WAF often lives only on
   the www response; the apex is a redirector. Keep `max_redirects` bounded
   (5) and record the chain in `redirects`/`final_host`. Integration tests

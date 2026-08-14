@@ -137,6 +137,34 @@ class TestNewSignatures:
         assert "bytedance" in self._names(
             headers={"server": "TLB", "x-tt-logid": "20260814200057591DC34EF92C2774412B"})
 
+    def test_aws_waf_cloudfront_403(self):
+        # CloudFront + AWS WAF managed rules: 403 + x-cache: Error from
+        # cloudfront on an attack-shaped request (bank-example.co.id,
+        # example-hospital.com). Status is the _status pseudo-header.
+        from w4f.scanner import fingerprint
+        r = fingerprint({
+            "ips": ["54.192.164.78"], "cname": [], "ptr": [], "cert": {},
+            "tls": {"http": {"status": "HTTP/2 403 Forbidden",
+                              "headers": {"server": "CloudFront",
+                                          "x-cache": "Error from cloudfront"},
+                              "set-cookie-list": []}},
+        })
+        assert "aws-waf" in [m["vendor"] for m in r]
+
+    def test_aws_waf_not_on_normal_cloudfront_200(self):
+        # A normal CloudFront 200 (Miss from cloudfront) must NOT claim WAF
+        from w4f.scanner import fingerprint
+        r = fingerprint({
+            "ips": ["54.192.164.78"], "cname": [], "ptr": [], "cert": {},
+            "tls": {"http": {"status": "HTTP/2 200 OK",
+                              "headers": {"server": "CloudFront",
+                                          "x-cache": "Miss from cloudfront"},
+                              "set-cookie-list": []}},
+        })
+        names = [m["vendor"] for m in r]
+        assert "aws-waf" not in names
+        assert "aws-cloudfront" in names
+
     def test_azure_app_service(self):
         # example-energy.com: ARRAffinity cookies
         assert "azure-app-service" in self._names(
