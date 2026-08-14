@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 import concurrent.futures as cf
 import json
+import re
 import sys
+import threading
+import time
 
 from w4f import __version__
 from w4f.banner import BANNER
@@ -61,6 +64,62 @@ def _validate_hostport(hostport: str) -> tuple[bool, str]:
     return True, ""
 
 
+def _domain(hostport: str) -> str:
+    """Extract a throttle domain from a host[:port] target."""
+    h = hostport.split(":", 1)[0]
+    # strip a leading dot-joined hostname down to its registrable-ish part:
+    # throttle per-hostname is fine (per-domain tracking per the proposal).
+    return h.lower()
+
+
+class Throttle:
+    """Per-domain adaptive delay between probes.
+
+    The submit loop sleeps ``base_delay`` between submissions (a flat
+    pacing that keeps sweeps polite). On a 429/503 response the per-domain
+    delay doubles (cap 10s) so the domain gets breathing room; a success
+    resets it to the base. ``--delay 0`` (default) preserves the old
+    no-pacing behavior.
+    """
+
+    CAP = 10.0
+    MULT = 2.0
+
+    def __init__(self, base_delay: float = 0.0):
+        self.base = base_delay
+        self._delays: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def delay_for(self, hostport: str) -> float:
+        with self._lock:
+            return self._delays.get(_domain(hostport), self.base)
+
+    def bump(self, hostport: str) -> float:
+        """Called after a 429/503: double the domain delay (capped)."""
+        d = _domain(hostport)
+        with self._lock:
+            cur = self._delays.get(d, self.base) or self.base
+            nxt = min(cur * self.MULT, self.CAP)
+            self._delays[d] = nxt
+            return nxt
+
+    def reset(self, hostport: str) -> None:
+        """Called after a success: drop the domain back to base."""
+        d = _domain(hostport)
+        with self._lock:
+            self._delays.pop(d, None)
+
+
+def _http_status_code(result: dict) -> int | None:
+    """Extract the numeric HTTP status from a probe result, if any."""
+    try:
+        status = ((result.get("tls") or {}).get("http") or {}).get("status") or ""
+        m = re.search(r" (\d{3}) ", status)
+        return int(m.group(1)) if m else None
+    except Exception:
+        return None
+
+
 def _load_targets_from_json(path: str) -> list[str]:
     """Read a subdomain-enumeration JSON file and return the host list.
 
@@ -114,6 +173,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="connect/TLS/HTTP timeout per host (default 8s)")
     ap.add_argument("--workers", type=int, default=8,
                     help="parallel host count (default 8)")
+    ap.add_argument("--delay", type=float, default=0.0,
+                    help="seconds to sleep between submissions (default 0 = no "
+                         "pacing); on a 429/503 the per-domain delay doubles up "
+                         "to 10s and resets on success")
     ap.add_argument("--json", metavar="FILE",
                     help="write the full machine-readable result tree to FILE")
     ap.add_argument("--md", metavar="FILE",
@@ -124,6 +187,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="OPT-IN active probe: send one benign <script> query and "
                          "report the WAF block page (catches silent WAFs like "
                          "FortiWeb/F5-ASM that passive scanning cannot see)")
+    ap.add_argument("--ws", metavar="PATH", default=None,
+                    help="OPT-IN WebSocket upgrade probe: request an upgrade at "
+                         "PATH (default /) and report whether the edge answers "
+                         "101 Switching Protocols (and from which identity)")
+    ap.add_argument("--grpc", action="store_true",
+                    help="OPT-IN gRPC health-check probe: POST a gRPC "
+                         "health-check frame and report grpc-status / gateway "
+                         "identity (best-effort; real gRPC is HTTP/2)")
     ap.add_argument("--version", action="version",
                     version=f"%(prog)s {__version__} — {_TAGLINE}")
     ap.add_argument("--quiet", action="store_true",
@@ -160,12 +231,26 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     results = []
+    throttle = Throttle(args.delay)
     with cf.ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futures = {ex.submit(probe_one, h, args.path, args.timeout,
-                             not args.no_http, args.verify): h
-                   for h in targets}
+        futures = {}
+        for h in targets:
+            # per-domain adaptive pacing between submissions
+            d = throttle.delay_for(h)
+            if d > 0:
+                time.sleep(d)
+            futures[ex.submit(probe_one, h, args.path, args.timeout,
+                              not args.no_http, args.verify, args.ws,
+                              args.grpc)] = h
         for fut in cf.as_completed(futures):
-            results.append(fut.result())
+            r = fut.result()
+            results.append(r)
+            # adaptive backoff: 429/503 doubles the domain delay, success resets
+            code = _http_status_code(r)
+            if code in (429, 503):
+                throttle.bump(futures[fut])
+            elif code is not None:
+                throttle.reset(futures[fut])
     results.sort(key=lambda r: r["hostport"])
 
     if not args.quiet:

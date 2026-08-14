@@ -140,3 +140,66 @@ class TestProbeOne:
     def test_dns_failure(self):
         out = probe_one("nonexistent.invalid", "/", 2.0, do_http=False)
         assert out["error"] in ("DNS did not resolve", None) or out["resolved"]["ips"] == []
+
+
+class TestWsGrpcProbes:
+    def test_ws_upgrade_101(self, tls_server):
+        from w4f.scanner import ws_probe
+        srv = tls_server(
+            status="HTTP/1.1 101 Switching Protocols",
+            headers=["Upgrade: websocket", "Sec-WebSocket-Accept: abc123"],
+        )
+        out = ws_probe("127.0.0.1", srv.port, "/ws", 5.0)
+        assert out["upgrade_supported"] is True
+        assert out["sec_websocket_accept"] == "abc123"
+
+    def test_ws_upgrade_rejected(self, tls_server):
+        from w4f.scanner import ws_probe
+        srv = tls_server(status="HTTP/1.1 403 Forbidden")
+        out = ws_probe("127.0.0.1", srv.port, "/ws", 5.0)
+        assert out["upgrade_supported"] is False
+        assert out["status"].startswith("HTTP/1.1 403")
+
+    def test_ws_connection_refused_no_crash(self):
+        from w4f.scanner import ws_probe
+        import socket
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        out = ws_probe("127.0.0.1", port, "/ws", 2.0)
+        assert out["error"] and out["upgrade_supported"] is False
+
+    def test_grpc_grpc_status_header(self, tls_server):
+        from w4f.scanner import grpc_probe
+        srv = tls_server(status="HTTP/1.1 200 OK",
+                         headers=["Content-Type: application/grpc", "grpc-status: 12"])
+        out = grpc_probe("127.0.0.1", srv.port, 5.0)
+        assert out["grpc_supported"] is True
+        assert out["grpc_status"] == "12"
+
+    def test_grpc_rejected_plain(self, tls_server):
+        from w4f.scanner import grpc_probe
+        srv = tls_server(status="HTTP/1.1 400 Bad Request")
+        out = grpc_probe("127.0.0.1", srv.port, 5.0)
+        assert out["grpc_supported"] is False
+        assert out["status"].startswith("HTTP/1.1 400")
+
+    def test_grpc_connection_refused_no_crash(self):
+        from w4f.scanner import grpc_probe
+        import socket
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        out = grpc_probe("127.0.0.1", port, 2.0)
+        assert out["error"] and out["grpc_supported"] is False
+
+    def test_probe_one_runs_opt_in_probes(self, tls_server):
+        srv = tls_server(status="HTTP/1.1 101 Switching Protocols",
+                         headers=["Upgrade: websocket"])
+        out = probe_one(f"127.0.0.1:{srv.port}", "/", 5.0, do_http=True,
+                        ws_path="/ws", grpc=True)
+        assert out["error"] is None
+        assert out["ws"]["upgrade_supported"] is True
+        assert "grpc" in out  # ran without raising

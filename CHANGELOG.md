@@ -5,6 +5,33 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.20] — 2026-08-14
+
+Rate limiting, WS/gRPC probes, vendor-signature docs.
+
+- **Per-domain adaptive rate limiting (`--delay`).** `Throttle` class with
+  per-domain delay tracking: the submit loop sleeps `--delay` (default 0 =
+  no pacing) between submissions; on a 429/503 the domain's delay doubles
+  (cap 10s) and a success resets it. Keeps sweeps polite against
+  rate-limited targets without slowing scans that never hit a limit.
+  +5 tests.
+- **WebSocket upgrade probe (`--ws PATH`).** Sends an RFC 6455 upgrade
+  request and reports whether the edge answers `101 Switching Protocols`
+  (and the `Sec-WebSocket-Accept`), or which component rejects it — WAF/CDN
+  edges often treat Upgrade differently from a plain GET. +4 tests.
+- **gRPC health-check probe (`--grpc`).** POSTs a gRPC health-check frame
+  and reports `grpc-status`/`grpc-message` or the HTTP/2 binary-framing
+  answer — best-effort, since real gRPC is HTTP/2 and w4f's GET is
+  deliberately HTTP/1.1 (pairs with the ALPN observation). +3 tests.
+- **Vendor signature reference (`docs/vendor-signatures.md`).** Why each
+  signal family (headers/cookies/cert/CNAME/PTR/netblock) identifies its
+  vendor, the confidence weights, required-signal gating, and how to read
+  multi-layer answers. Linked from the README.
+- **Housekeeping:** the last private `ssl._create_unverified_context()`
+  call site (verify_block) now uses the public `_unverified_ctx()`.
+
++12 tests (172 total).
+
 ## [0.1.19] — 2026-08-14
 
 Review-driven improvements (P0 confidence scoring + ALPN observation, vendor

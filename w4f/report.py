@@ -87,6 +87,23 @@ def fmt_block(r: dict) -> str:
         )
     if cert.get("spki_sha256"):
         lines.append(_row("  spki", cert.get("spki_sha256")))
+    if r.get("ws"):
+        ws = r["ws"]
+        if ws.get("upgrade_supported"):
+            lines.append(_row("ws", _GREEN + f"101 Switching Protocols (accept: {ws.get('sec_websocket_accept') or '-'})" + _RESET))
+        elif ws.get("status"):
+            lines.append(_row("ws", f"upgrade {ws['status']}"))
+        elif ws.get("error"):
+            lines.append(_row("ws", _DIM + ws["error"] + _RESET))
+    if r.get("grpc"):
+        g = r["grpc"]
+        if g.get("grpc_supported"):
+            lines.append(_row("grpc", _GREEN + f"supported (grpc-status {g.get('grpc_status', '?')})" + _RESET
+                              + (f"  {g.get('grpc_message')}" if g.get("grpc_message") else "")))
+        elif g.get("status"):
+            lines.append(_row("grpc", f"rejected {g['status']}"))
+        elif g.get("error"):
+            lines.append(_row("grpc", _DIM + g["error"] + _RESET))
     if cert.get("key_type"):
         lines.append(
             _row("  key", f"{cert.get('key_type')} {cert.get('key_size','')}  {cert.get('signature')}")

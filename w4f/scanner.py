@@ -630,7 +630,7 @@ def verify_block(host: str, port: int, timeout: float) -> dict | None:
     sock = None
     try:
         sock = socket.create_connection((host, port), timeout=timeout)
-        ctx = ssl._create_unverified_context()
+        ctx = _unverified_ctx()
         ctx.set_alpn_protocols(["http/1.1"])
         with ctx.wrap_socket(sock, server_hostname=host) as ts:
             sock = None  # ownership moved to ts
@@ -662,8 +662,125 @@ def verify_block(host: str, port: int, timeout: float) -> dict | None:
     )
 
 
+def ws_probe(host: str, port: int, path: str, timeout: float) -> dict:
+    """WebSocket upgrade probe: ask the server to switch protocols.
+
+    A WAF/CDN often treats the Upgrade request differently from a plain
+    GET — it may block the upgrade (challenge page), proxy it through, or
+    answer 101 from a different component than the one serving the GET.
+    Reports the status line and the upgrade-relevant headers so consumers
+    can see which identity answered the upgrade.
+    """
+    path = path or "/"
+    key = "dGhlIHNhbXBsZSBub25jZQ=="  # RFC 6455 example key
+    req = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}\r\n"
+        f"User-Agent: {UA}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n"
+    )
+    out: dict = {"upgrade_supported": False, "error": None}
+    sock = None
+    try:
+        sock = socket.create_connection((host, port), timeout=timeout)
+        ctx = _unverified_ctx()
+        ctx.set_alpn_protocols(["http/1.1"])
+        with ctx.wrap_socket(sock, server_hostname=host) as ts:
+            sock = None
+            ts.settimeout(timeout)
+            ts.sendall(req.encode())
+            data = b""
+            while b"\r\n\r\n" not in data and len(data) < 65536:
+                chunk = ts.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+        parsed = parse_http_response(data)
+        out["status"] = parsed["status"]
+        out["headers"] = parsed["headers"]
+        out["upgrade_supported"] = parsed["status"].startswith("HTTP/1.1 101")
+        if out["upgrade_supported"]:
+            out["sec_websocket_accept"] = parsed["headers"].get("sec-websocket-accept")
+    except Exception as e:
+        if sock is not None:
+            try:
+                sock.close()
+            except Exception:
+                pass
+        out["error"] = f"ws probe failed: {e}"
+    return out
+
+
+def grpc_probe(host: str, port: int, timeout: float) -> dict:
+    """gRPC health-check probe (best-effort, HTTP/1.1 framing).
+
+    Real gRPC is HTTP/2, which this tool deliberately avoids (h2 frames
+    would read as garbage on the http/1.1 GET path). Many gRPC gateways
+    (Envoy, AWS App Runner, grpc-gateway) still answer an HTTP/1.1 request
+    with a grpc-status header — if the endpoint is gRPC-only it usually
+    rejects the plain-text framing with 400/426 and a grpc-message, which
+    is itself a detection signal. The probe reports whatever came back.
+    """
+    # grpc.health.v1.Health/Check with an empty request = one 5-byte frame
+    # (compression flag 0 + 4-byte length 0) inside an HTTP/1.1 POST.
+    body = b"\x00\x00\x00\x00\x00"
+    req = (
+        f"POST /grpc.health.v1.Health/Check HTTP/1.1\r\n"
+        f"Host: {host}\r\n"
+        f"User-Agent: {UA}\r\n"
+        "Content-Type: application/grpc\r\n"
+        "TE: trailers\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        "\r\n"
+    )
+    out: dict = {"grpc_supported": False, "error": None}
+    sock = None
+    try:
+        sock = socket.create_connection((host, port), timeout=timeout)
+        ctx = _unverified_ctx()
+        ctx.set_alpn_protocols(["h2", "http/1.1"])
+        with ctx.wrap_socket(sock, server_hostname=host) as ts:
+            sock = None
+            ts.settimeout(timeout)
+            ts.sendall(req.encode() + body)
+            data = b""
+            while b"\r\n\r\n" not in data and len(data) < 65536:
+                chunk = ts.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+        parsed = parse_http_response(data)
+        out["status"] = parsed["status"]
+        out["headers"] = parsed["headers"]
+        grpc_status = parsed["headers"].get("grpc-status")
+        if grpc_status is not None:
+            out["grpc_supported"] = True
+            out["grpc_status"] = grpc_status
+            out["grpc_message"] = parsed["headers"].get("grpc-message")
+        elif parsed["status"].startswith("HTTP/2 ") or (
+                data and not parsed["status"].startswith("HTTP/")):
+            # the server negotiated h2 and answered with binary HTTP/2
+            # frames (not a text HTTP/1.x response) — that IS a gRPC-capable
+            # signal; the ALPN observation flags the framing view
+            out["grpc_supported"] = True
+            out["note"] = "server answered over HTTP/2 (binary framing)"
+    except Exception as e:
+        if sock is not None:
+            try:
+                sock.close()
+            except Exception:
+                pass
+        out["error"] = f"grpc probe failed: {e}"
+    return out
+
+
 def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
-              verify: bool = False) -> dict:
+              verify: bool = False, ws_path: str | None = None,
+              grpc: bool = False) -> dict:
     host, _, port_s = hostport.rpartition(":")
     if not host:
         host = hostport
@@ -721,6 +838,10 @@ def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
             blk = verify_block(host, port, timeout)
             if blk:
                 result["block"] = blk
+        if ws_path:
+            result["ws"] = ws_probe(host, port, ws_path, timeout)
+        if grpc:
+            result["grpc"] = grpc_probe(host, port, timeout)
     except Exception as e:
         result["error"] = f"probe failed: {e}"
     return result

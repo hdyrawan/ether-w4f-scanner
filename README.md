@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.19
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.20
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -17,7 +17,8 @@
 [![python](https://img.shields.io/badge/python-3.10--3.12-blue)](https://pypi.org/project/w4f/)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-[Release notes → CHANGELOG.md](CHANGELOG.md)
+[Release notes → CHANGELOG.md](CHANGELOG.md) ·
+[Vendor signature reference → docs/vendor-signatures.md](docs/vendor-signatures.md)
 
 Passive **TLS / CDN / WAF / edge fingerprinting** for API endpoints. For any
 `host[:port]` it walks the standard client path — DNS (A/AAAA/CNAME/PTR), one
@@ -205,7 +206,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.19
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.20
 
 api.example.com:443
 ip        45.60.16.239

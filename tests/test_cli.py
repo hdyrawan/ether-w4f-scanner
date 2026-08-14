@@ -156,6 +156,43 @@ class TestHostportValidation:
         assert ok and msg == ""
 
 
+class TestThrottle:
+    def test_base_delay_unchanged(self):
+        from w4f.cli import Throttle
+        t = Throttle(0.0)
+        assert t.delay_for("example.com") == 0.0
+
+    def test_bump_doubles_and_reset_restores(self):
+        from w4f.cli import Throttle
+        t = Throttle(0.5)
+        assert t.delay_for("example.com") == 0.5
+        t.bump("example.com")   # 1.0
+        t.bump("example.com")   # 2.0
+        assert t.delay_for("example.com") == 2.0
+        t.reset("example.com")
+        assert t.delay_for("example.com") == 0.5
+
+    def test_bump_capped(self):
+        from w4f.cli import Throttle
+        t = Throttle(5.0)
+        t.bump("x.com")  # 10
+        t.bump("x.com")  # would be 20 -> capped at 10
+        assert t.delay_for("x.com") == Throttle.CAP == 10.0
+
+    def test_domains_isolated(self):
+        from w4f.cli import Throttle
+        t = Throttle(0.1)
+        t.bump("busy.com")
+        assert t.delay_for("busy.com") == 0.2
+        assert t.delay_for("quiet.com") == 0.1
+
+    def test_http_status_code_extraction(self):
+        from w4f.cli import _http_status_code
+        assert _http_status_code({"tls": {"http": {"status": "HTTP/1.1 429 Too Many Requests"}}}) == 429
+        assert _http_status_code({"tls": {"http": {"status": "HTTP/2 200 OK"}}}) == 200
+        assert _http_status_code({"tls": {"http": {"status": "ERROR: boom"}}}) is None
+
+
 def pytest_raises_systemexit():
     import pytest
     return pytest.raises(SystemExit)
