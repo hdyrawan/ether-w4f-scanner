@@ -94,6 +94,11 @@ Vendor names are matched with weights: a host behind nginx directly gets
 edge is not in the signature table — treat it as "unknown origin, no WAF/CDN
 signature", not "no WAF".
 
+**v0.1.1 note:** header/cookie matching now reads the HTTP layer from the
+TLS result (a v0.1.0 bug made cookie-only vendors — notably F5 BIG-IP ASM's
+`TS<hex>` JavaScript-challenge cookie — report "unknown edge"). Re-run any
+sweep that predates this fix before trusting a blank verdict.
+
 ## Vendor coverage
 
 Cloudflare, Imperva, Akamai, AWS CloudFront / WAF / ELB / S3, Fastly, Azure

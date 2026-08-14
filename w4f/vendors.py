@@ -108,7 +108,10 @@ VENDORS: dict[str, dict] = {
     },
     "f5": {
         "headers": {"server": r"bigip|big-ip", "x-wa-info": None, "x-cnection": None},
-        "cookies": [r"^bigipserver", r"^MRHSession", r"^F5_", r"^TS[a-fA-F0-9]{6,8}="],
+        # BIG-IP ASM / Advanced WAF sets the TS<hex> JavaScript-challenge
+        # cookie; the hex run is 6-12 chars depending on build. BIGipServer
+        # is the LTM persistence cookie, TSxxxx the ASM anti-bot cookie.
+        "cookies": [r"^bigipserver", r"^MRHSession", r"^F5_", r"^TS[a-fA-F0-9]{6,12}="],
         "cert": r"f5 networks",
     },
     "netscaler": {

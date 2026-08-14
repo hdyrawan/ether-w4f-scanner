@@ -260,11 +260,18 @@ def http_get(host: str, port: int, path: str, timeout: float) -> dict:
 
 
 def fingerprint(result: dict) -> list[dict]:
-    """Ranked vendor matches with the signals that matched."""
+    """Ranked vendor matches with the signals that matched.
+
+    The HTTP layer lives under result['tls']['http'] (probe_one stores the
+    whole tls dict), NOT at the top level — reading result.get('http') was a
+    bug that silently disabled ALL header/cookie matching (F5, cookie-based
+    vendors, etc.). Also accept the mirrored top-level form for compat.
+    """
     from w4f.vendors import VENDORS, vendor_nets
 
-    headers = (result.get("http") or {}).get("headers") or {}
-    set_cookies = (result.get("http") or {}).get("set-cookie-list") or []
+    http_layer = (result.get("tls") or {}).get("http") or result.get("http") or {}
+    headers = http_layer.get("headers") or {}
+    set_cookies = http_layer.get("set-cookie-list") or []
     cert = result.get("cert") or {}
     cert_text = " ".join([
         str(cert.get("issuer", "")), str(cert.get("issuer_org", "")),
