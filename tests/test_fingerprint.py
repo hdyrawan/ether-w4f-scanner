@@ -376,6 +376,21 @@ class TestSignalCounting:
         for m in ver:
             assert "signals" in m and "confidence" in m
 
+    def test_cloudfront_jakarta_netblock_fires(self):
+        # EXAMPLE_BANK case: 3.168.x.x (Jakarta CloudFront edge) must hit the
+        # netblock category — it was missing from the table before, leaving
+        # a PTR-confirmed CloudFront host at 22% instead of 52%.
+        r = _result(
+            ips=["3.168.203.66", "3.168.203.9"],
+            ptr=["server-3-168-203-66.cgk51.r.cloudfront.net"],
+            headers={"server": "CloudFront", "x-amz-cf-pop": "CGK51-P4",
+                     "via": "1.1 abc.cloudfront.net (CloudFront)"},
+        )
+        ver = fingerprint(r)
+        cf = next(m for m in ver if m["vendor"] == "aws-cloudfront")
+        assert any(e.startswith("netblock:") for e in cf["evidence"])
+        assert cf["confidence"] == 52  # netblock 30 + headers 7 + ptr 15
+
     def test_evidence_strings_present(self):
         r = _result(cookies=["TS01538524=012b5961782784783de7052afa3b4817"])
         ver = fingerprint(r)

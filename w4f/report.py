@@ -132,7 +132,8 @@ def fmt_block(r: dict) -> str:
     if blk:
         lines.append(
             _row("block", _YELLOW + f"{blk['vendor']} — {blk['title']}"
-                 f" ({blk.get('status','')})" + _RESET)
+                 f" ({blk.get('status','')})"
+                 f" [{blk.get('confidence', 95)}% conf]" + _RESET)
         )
     return "\n".join(lines)
 
@@ -192,7 +193,8 @@ def _fmt_md_block(r: dict) -> str:
     blk = r.get("block")
     if blk:
         lines.append(f"- **Block probe** (--verify): **{blk['vendor']}** — "
-                     f"{blk['title']} ({blk.get('status','')})")
+                     f"{blk['title']} ({blk.get('status','')}) "
+                     f"[{blk.get('confidence', 95)}% conf]")
     return "\n".join(lines)
 
 

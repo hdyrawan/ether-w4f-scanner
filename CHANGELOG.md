@@ -5,6 +5,24 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.21] — 2026-08-14
+
+Confidence accuracy fixes (found live on a CloudFront-fronted host).
+
+- **CloudFront netblock table gap fixed.** The Jakarta edge (`3.168.0.0/14`,
+  and the `3.160.0.0/14` / `108.156.0.0/14` peers) was missing, so a
+  PTR-confirmed CloudFront host scored only 22% (headers 7 + ptr 15) — the
+  netblock category (30) never fired. Now `aws-cloudfront` scores 52 on the
+  same host (netblock 30 + headers 7 + ptr 15). Verified against AWS's
+  published CLOUDFRONT ranges (the other large /14s were already present).
+- **Block confidence.** `--verify` block pages now carry `confidence: 95` —
+  a block page is the edge's OWN WAF page (the strongest possible signal),
+  but it comes from `verify_block`/`match_block_page`, which never passed
+  through `fingerprint()`. Console and `--md` show it (`[95% conf]`).
+  `block.confidence` is set in probe_one.
+
++2 tests (174 total).
+
 ## [0.1.20] — 2026-08-14
 
 Rate limiting, WS/gRPC probes, vendor-signature docs.

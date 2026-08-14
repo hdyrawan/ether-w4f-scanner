@@ -136,6 +136,8 @@ class TestProbeOne:
         assert out["tls"]["http"]["headers"]["server"] == "nginx"
         assert [m["vendor"] for m in out["verdict"]] == ["nginx"]
         assert out["block"] and out["block"]["vendor"] == "fortiweb"
+        # block page = the edge's own WAF page: high confidence by design
+        assert out["block"]["confidence"] == 95
 
     def test_dns_failure(self):
         out = probe_one("nonexistent.invalid", "/", 2.0, do_http=False)

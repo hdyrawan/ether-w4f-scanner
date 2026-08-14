@@ -837,6 +837,10 @@ def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
         if verify:
             blk = verify_block(host, port, timeout)
             if blk:
+                # A block page is the edge's OWN WAF page — the strongest
+                # possible signal, so it carries high confidence (it comes
+                # from verify_block/match_block_page, not fingerprint()).
+                blk["confidence"] = 95
                 result["block"] = blk
         if ws_path:
             result["ws"] = ws_probe(host, port, ws_path, timeout)

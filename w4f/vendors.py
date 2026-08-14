@@ -81,11 +81,15 @@ VENDORS: dict[str, dict] = {
                     "x-cache": r"error from cloudfront", "via": r"cloudfront\.net"},
         "cname": r"cloudfront\.net",
         "ptr": r"cloudfront\.net",
+        # Coarse AWS-published CLOUDFRONT ranges (3.160/3.168/108.156 are the
+        # large /14s missing from the earlier table — 3.168 covers the Jakarta
+        # edge that serves .co.id hosts; PTR already confirms it).
         "nets": [
-            "13.32.0.0/15", "13.35.0.0/16", "13.224.0.0/14",
-            "13.249.0.0/16", "18.160.0.0/15", "18.64.0.0/15",
+            "3.160.0.0/14", "3.168.0.0/14", "13.32.0.0/15", "13.35.0.0/16",
+            "13.224.0.0/14", "13.249.0.0/16", "18.160.0.0/15", "18.64.0.0/15",
             "52.84.0.0/15", "54.182.0.0/16", "99.84.0.0/16",
-            "204.246.160.0/19", "205.251.192.0/19", "130.176.0.0/16",
+            "108.156.0.0/14", "130.176.0.0/16", "204.246.160.0/19",
+            "205.251.192.0/19",
         ],
     },
     "aws-waf": {
