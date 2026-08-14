@@ -47,6 +47,12 @@ the tool and its documentation.
   The glyph rows are verbatim from DOS Rebel.flf (hardblank `$` → space,
   trailing `@` endmarks stripped, all 11 rows kept) — do not "improve" the
   layout, it must match taag.
+- **Testing is mandatory before a release.** `python -m pytest` runs the
+  offline suite (71 tests; local TLS server, no internet). The vendor
+  signature table has per-regex sanity tests — when adding a vendor or
+  signature, add a positive AND a negative case to `tests/`. The
+  `--verify` block-page matcher tests the two field traps (title at end of
+  body, localized titles). CI runs 3.10/3.11/3.12 + a no-optional-deps job.
 - **Pure stdlib + two optional deps.** `cryptography` (cert parsing) and
   `dnspython` (CNAME/PTR) are optional; the scanner must degrade gracefully
   without either. Never add a hard dependency.

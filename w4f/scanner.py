@@ -169,12 +169,15 @@ def tls_probe(host: str, port: int, path: str, timeout: float, do_http: bool) ->
         ctx.set_alpn_protocols(["h2", "http/1.1"])
         try:
             with ctx.wrap_socket(sock, server_hostname=host) as ts:
+                sock = None  # ownership moved to ts
                 verified = True
                 _collect_tls(ts, out)
                 out["chain_verified"] = True
             # GET over a SEPARATE http/1.1-only connection: if the first
             # handshake negotiated h2, an HTTP/1.1 request on that socket gets
-            # a binary HTTP/2 frame back, which reads as garbage.
+            # a binary HTTP/2 frame back, which reads as garbage. Do it only
+            # AFTER the handshake connection is closed (single-threaded
+            # servers block on the first socket otherwise).
             if do_http:
                 http = http_get(host, port, path, timeout)
                 out["http"] = http
@@ -189,18 +192,35 @@ def tls_probe(host: str, port: int, path: str, timeout: float, do_http: bool) ->
             if "certificate required" in msg or "certificate required" in getattr(e, "strerror", ""):
                 out["mtls"] = True
             # fall through: retry unvalidated to still grab the cert
+            if sock is not None:
+                try:
+                    sock.close()  # don't leak the failed-verification socket
+                except Exception:
+                    pass
             try:
                 sock = socket.create_connection((host, port), timeout=timeout)
                 ctx2 = ssl._create_unverified_context()
                 ctx2.set_alpn_protocols(["h2", "http/1.1"])
-                with ctx2.wrap_socket(sock, server_hostname=host) as ts:
-                    _collect_tls(ts, out)
-                    out["chain_verified"] = False
-                    if do_http:
-                        http = http_get(host, port, path, timeout)
-                        out["http"] = http
-                        if "certificate required" in http.get("status", "").lower():
-                            out["mtls"] = True
+                try:
+                    with ctx2.wrap_socket(sock, server_hostname=host) as ts:
+                        sock = None  # ownership moved to ts
+                        _collect_tls(ts, out)
+                        out["chain_verified"] = False
+                finally:
+                    if sock is not None:
+                        try:
+                            sock.close()
+                        except Exception:
+                            pass
+                # Close the handshake connection BEFORE the HTTP GET: a
+                # single-threaded server blocks on the first connection's
+                # socket while we open a second one, and the second then
+                # times out. Never hold one connection across another.
+                if do_http:
+                    http = http_get(host, port, path, timeout)
+                    out["http"] = http
+                    if "certificate required" in http.get("status", "").lower():
+                        out["mtls"] = True
             except Exception as e2:
                 if not out.get("tls_error"):
                     out["tls_error"] = f"tls failed: {e2}"
@@ -230,11 +250,13 @@ def http_get(host: str, port: int, path: str, timeout: float) -> dict:
     )
 
     def _once(verify: bool) -> dict:
+        sock = None
         try:
             sock = socket.create_connection((host, port), timeout=timeout)
             ctx = ssl.create_default_context() if verify else ssl._create_unverified_context()
             ctx.set_alpn_protocols(["http/1.1"])
             with ctx.wrap_socket(sock, server_hostname=host) as ts:
+                sock = None  # ownership moved to ts; the with closes it
                 ts.settimeout(timeout)
                 ts.sendall(req.encode())
                 data = b""
@@ -243,21 +265,15 @@ def http_get(host: str, port: int, path: str, timeout: float) -> dict:
                     if not chunk:
                         break
                     data += chunk
-            head, _, _ = data.partition(b"\r\n\r\n")
-            lines = head.decode("latin-1", "replace").split("\r\n")
-            status = lines[0] if lines else ""
-            headers = {}
-            set_cookie_list = []
-            for line in lines[1:]:
-                if ":" in line:
-                    k, v = line.split(":", 1)
-                    k, v = k.strip().lower(), v.strip()
-                    if k == "set-cookie":
-                        set_cookie_list.append(v)
-                    else:
-                        headers[k] = v
-            return {"status": status, "headers": headers, "set-cookie-list": set_cookie_list}
+            parsed = parse_http_response(data)
+            return {"status": parsed["status"], "headers": parsed["headers"],
+                    "set-cookie-list": parsed["set-cookie-list"]}
         except Exception as e:
+            if sock is not None:
+                try:
+                    sock.close()  # don't leak a failed-verification socket
+                except Exception:
+                    pass
             return {"status": f"ERROR: {e}", "headers": {}, "set-cookie-list": []}
 
     result = _once(verify=True)
@@ -327,6 +343,66 @@ def fingerprint(result: dict) -> list[dict]:
     return matches
 
 
+def parse_http_response(data: bytes) -> dict:
+    """Parse a raw HTTP/1.x response (head + body bytes) into a dict.
+
+    Pure function — no I/O — so it is directly unit-testable. Returns:
+    {status, headers, set-cookie-list, head_text, body_text, title}
+    """
+    head, _, body = data.partition(b"\r\n\r\n")
+    lines = head.decode("latin-1", "replace").split("\r\n")
+    status = lines[0] if lines else ""
+    headers: dict[str, str] = {}
+    set_cookie_list: list[str] = []
+    for line in lines[1:]:
+        if ":" in line:
+            k, v = line.split(":", 1)
+            k, v = k.strip().lower(), v.strip()
+            if k == "set-cookie":
+                set_cookie_list.append(v)
+            else:
+                headers[k] = v
+    head_text = head.decode("latin-1", "replace").lower()
+    body_lower = body[:65536].decode("latin-1", "replace").lower()
+    # extract the title from the ORIGINAL body (case preserved, for display)
+    title = ""
+    m = re.search(r"<title[^>]*>(.*?)</title>", body[:65536].decode("latin-1", "replace"),
+                  re.I | re.S)
+    if m:
+        title = re.sub(r"\s+", " ", m.group(1)).strip()
+    return {
+        "status": status,
+        "headers": headers,
+        "set-cookie-list": set_cookie_list,
+        "head_text": head_text,
+        "body_text": body_lower,
+        "title": title,
+    }
+
+
+def match_block_page(title: str, head_text: str, body_text: str, status: str) -> dict | None:
+    """Match a WAF block page by its <title> / body markers.
+
+    Pure function so the signature table is unit-testable without sockets.
+    Returns {vendor, title, status} or None when nothing matches.
+    """
+    t = title.lower()
+    # FortiWeb localizes its title ("The URL Request Tidak Tersedia" on the
+    # Indonesian fleet), so match both the English and ID fragments.
+    if "the url you requested has been blocked" in t \
+            or ("tidak tersedia" in t and "url" in t):
+        return {"vendor": "fortiweb", "title": title, "status": status}
+    if t.startswith("request rejected") and "f5" in head_text:
+        return {"vendor": "f5-asm", "title": title, "status": status}
+    if t.startswith("request rejected"):
+        return {"vendor": "f5-asm", "title": title, "status": status}
+    if "attention required" in t and "cloudflare" in body_text:
+        return {"vendor": "cloudflare", "title": title, "status": status}
+    if "incapsula" in body_text or "incap_ses" in head_text:
+        return {"vendor": "imperva", "title": title, "status": status}
+    return None
+
+
 def verify_block(host: str, port: int, timeout: float) -> dict | None:
     """OPT-IN active probe: send one benign attack-shaped query and check
     for a WAF block page.
@@ -347,11 +423,13 @@ def verify_block(host: str, port: int, timeout: float) -> dict | None:
         "Accept: */*\r\n"
         "Connection: close\r\n\r\n"
     )
+    sock = None
     try:
         sock = socket.create_connection((host, port), timeout=timeout)
         ctx = ssl._create_unverified_context()
         ctx.set_alpn_protocols(["http/1.1"])
         with ctx.wrap_socket(sock, server_hostname=host) as ts:
+            sock = None  # ownership moved to ts
             ts.settimeout(timeout)
             ts.sendall(req.encode())
             data = b""
@@ -366,34 +444,18 @@ def verify_block(host: str, port: int, timeout: float) -> dict | None:
                 if not chunk:
                     break
                 data += chunk
-        head, _, body = data.partition(b"\r\n\r\n")
-        lines = head.decode("latin-1", "replace").split("\r\n")
-        status = lines[0] if lines else ""
-        head_txt = head.decode("latin-1", "replace").lower()
-        body_text = body[:65536].decode("latin-1", "replace").lower()
-        title = ""
-        m = re.search(r"<title[^>]*>(.*?)</title>", body_text, re.I | re.S)
-        if m:
-            title = re.sub(r"\s+", " ", m.group(1)).strip()
     except Exception:
+        if sock is not None:
+            try:
+                sock.close()
+            except Exception:
+                pass
         return None
 
-    # Block-page signatures — title fragments are the strongest, most
-    # stable marker (FortiWeb / F5 ASM use the same titles across builds).
-    # FortiWeb localizes its title ("The URL Request Tidak Tersedia" on the
-    # Indonesian fleet), so match both the English and ID fragments.
-    if ("the url you requested has been blocked" in title
-            or ("tidak tersedia" in title and "url" in title)):
-        return {"vendor": "fortiweb", "title": title, "status": status}
-    if title.lower().startswith("request rejected") and "f5" in head_txt:
-        return {"vendor": "f5-asm", "title": title, "status": status}
-    if title.lower().startswith("request rejected"):
-        return {"vendor": "f5-asm", "title": title, "status": status}
-    if "attention required" in title and "cloudflare" in body_text:
-        return {"vendor": "cloudflare", "title": title, "status": status}
-    if "incapsula" in body_text or "incap_ses" in head_txt:
-        return {"vendor": "imperva", "title": title, "status": status}
-    return None
+    parsed = parse_http_response(data)
+    return match_block_page(
+        parsed["title"], parsed["head_text"], parsed["body_text"], parsed["status"]
+    )
 
 
 def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
