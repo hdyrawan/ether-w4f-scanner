@@ -97,6 +97,12 @@ class TestRealWorldPositives:
         )
         assert "google-gfe" in [m["vendor"] for m in fingerprint(r)]
 
+    def test_arvancloud_request_id_header(self):
+        # ArvanCloud's concrete response header must name the edge (the old
+        # "x-arvan-*" glob key was matched by exact lookup and never fired).
+        r = _result(headers={"x-arvan-request-id": "9f3c1a2b"})
+        assert "arvancloud" in [m["vendor"] for m in fingerprint(r)]
+
     def test_nginx_direct_origin(self):
         r = _result(ips=["117.54.11.167"], headers={"server": "nginx/1.24.0"})
         names = [m["vendor"] for m in fingerprint(r)]
@@ -104,6 +110,31 @@ class TestRealWorldPositives:
         # plain nginx must NOT be mislabeled as a WAF vendor
         assert "fortiweb" not in names
         assert "f5" not in names
+
+    def test_http3_host_not_google_gfe(self):
+        # alt-svc:h3 is web-wide (any HTTP/3 host). A plain nginx origin
+        # advertising HTTP/3 must NOT be labeled google-gfe.
+        r = _result(headers={"server": "nginx/1.25.3", "alt-svc": 'h3=":443"; ma=86400'})
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "nginx" in names
+        assert "google-gfe" not in names
+
+    def test_cloudflare_http3_no_phantom_gfe(self):
+        # A Cloudflare host that speaks HTTP/3 must not pick up a stray
+        # google-gfe signal from its alt-svc header.
+        r = _result(
+            headers={"server": "cloudflare", "cf-ray": "abc-CGK", "alt-svc": 'h3=":443"'},
+        )
+        assert "google-gfe" not in [m["vendor"] for m in fingerprint(r)]
+
+    def test_arvan_wildcard_key_is_dead(self):
+        # Guard against reintroducing a glob header key: a header literally
+        # named "x-arvan-*" does not occur on the wire, and the real
+        # x-arvan-cache header must not depend on such a key to be matched.
+        r = _result(headers={"x-arvan-cache": "HIT"})
+        # x-arvan-cache is not (yet) a signature; the point is that the old
+        # dead "x-arvan-*" key contributed nothing, so this stays unknown.
+        assert "arvancloud" not in [m["vendor"] for m in fingerprint(r)]
 
 
 class TestNegatives:
