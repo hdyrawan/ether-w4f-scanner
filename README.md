@@ -73,6 +73,9 @@ w4f --target host[:port] [--target host2[:port] ...] \
     --json          write the full machine-readable result tree to FILE
     --md            write markdown per-host blocks (for docs) to FILE
     --no-http       TLS/cert/DNS only, skip the HTTP request
+    --verify        OPT-IN active probe: send one benign <script> query and
+                    report the WAF block page (catches silent WAFs like
+                    FortiWeb / F5-ASM that passive scanning cannot see)
     --version       print version and exit
     --quiet         suppress the per-host console block (useful with --json/--md)
 ```
@@ -140,6 +143,20 @@ Tencent EdgeOne edge — the tool must never lag the documented evidence.
   private-chain hosts still expose their headers (`bankdki.co.id` →
   `nginx`). Headers are fingerprint evidence; we don't need to trust the
   chain to read them.
+
+**v0.1.8 note — `--verify` (opt-in active probe).** Passive scanning cannot
+see WAFs that stay silent until they block something. A cross-check against
+the Indonesian bank fleet found **FortiWeb** on 13 hosts that served plain
+`nginx` to every passive request — FortiWeb only answers an attack-shaped
+query with its block page. `--verify` sends ONE benign `<script>` query and
+matches known block-page titles (FortiWeb EN + localized ID, F5 ASM
+"Request Rejected", Cloudflare, Imperva). Traps: the block page `<title>`
+can sit at the END of a 39 KB body (FortiWeb) — the probe reads until close,
+not just the header; and FortiWeb localizes its title, so both fragments
+are matched. The probe is optional and clearly labelled active — the default
+stays fully passive. An independent cross-check also validated w4f's passive
+verdicts and confirmed w4f sees things the other tool cannot (Tencent
+EdgeOne, F5-on-Artha-Graha, mTLS hosts it can't even handshake against).
 
 ## Vendor coverage
 

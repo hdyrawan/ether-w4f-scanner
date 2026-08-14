@@ -106,6 +106,13 @@ def fmt_block(r: dict) -> str:
                 lines.append(_row("  hdr", hdr))
 
     lines.append(_verdict_line(ver))
+
+    blk = r.get("block")
+    if blk:
+        lines.append(
+            _row("block", _YELLOW + f"{blk['vendor']} — {blk['title']}"
+                 f" ({blk.get('status','')})" + _RESET)
+        )
     return "\n".join(lines)
 
 
@@ -161,6 +168,10 @@ def _fmt_md_block(r: dict) -> str:
             lines.append(f"  - {m['vendor']} — " + "; ".join(m["evidence"]))
     else:
         lines.append("- **Verdict**: no CDN/WAF signature matched (unknown edge)")
+    blk = r.get("block")
+    if blk:
+        lines.append(f"- **Block probe** (--verify): **{blk['vendor']}** — "
+                     f"{blk['title']} ({blk.get('status','')})")
     return "\n".join(lines)
 
 
