@@ -6,7 +6,7 @@ from it.
 
 ## What this repo is
 
-`ether-w4f-scanner` is a standalone, package-agnostic **passive TLS / CDN /
+`w4f` is a standalone, package-agnostic **passive TLS / CDN /
 WAF / edge fingerprinting** tool. It was extracted from a larger Android
 anti-tamper research project (`anti-tamper-probe`) where knowing what edge
 sits in front of an API host decides which interception route can work. It
