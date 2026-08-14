@@ -45,6 +45,7 @@ VENDOR_COLORS: dict[str, str] = {
     "fortiweb": _BRIGHT_YELLOW,
     "sucuri": _GREEN,
     "kong": _BRIGHT_CYAN,
+    "wso2": _BRIGHT_RED,
     "vercel": _BRIGHT_MAGENTA,
     "squarespace": _BRIGHT_MAGENTA,
 }

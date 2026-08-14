@@ -126,6 +126,14 @@ field) so a single weak signal can never fire a composite rule — e.g.
 - `x-kpsdk-ct` / `x-datadome` / `x-px-*` / `x-tyk-*` — bot-management and
   gateway products (Kasada, DataDome, PerimeterX, Tyk). Prefix rules
   (`x-tyk-*`) match variable-suffix headers.
+- `server: WSO2 Carbon Server` / any `x-wso2-*` header — **WSO2** API
+  Manager / Carbon gateway. The Server token is set by WSO2's own Tomcat
+  connector config (`server="WSO2 Carbon Server"` in product-is and
+  product-apim `catalina-server.xml`); the `x-wso2-*` prefix matches the
+  gateway's metadata headers. The API Manager gateway's other distinctive
+  artifact is its fault JSON body (`{"fault":{"code":9009xx,...}}` on
+  unauthenticated calls), which is a body signal — not expressible in the
+  signature table, which matches headers/cookies/cert/cname/ptr/nets.
 
 ### Cookies
 
@@ -205,7 +213,7 @@ default green:
 | bright blue | Azure family (Front Door/AppGW/…) |
 | bright magenta | Tencent family, Vercel, Squarespace |
 | magenta | Google GFE, GCP Armor |
-| bright red | F5, NetScaler |
+| bright red | F5, NetScaler, WSO2 |
 | bright cyan | Kong |
 | yellow | Imperva |
 | dim | plain origins (nginx, Apache, IIS, Varnish, Envoy, HAProxy, …) |

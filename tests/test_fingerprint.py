@@ -30,6 +30,26 @@ def _result(ips=None, cname=None, ptr=None, headers=None, cookies=None,
 class TestRealWorldPositives:
     """Each case mirrors a host verified during the 2026-08-14 sweep."""
 
+    def test_wso2_carbon_server_header(self):
+        # WSO2 Carbon products set server="WSO2 Carbon Server" in their own
+        # Tomcat config (product-is / product-apim catalina-server.xml)
+        r = _result(headers={"server": "WSO2 Carbon Server"})
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "wso2" in names
+        assert "nginx" not in names
+
+    def test_wso2_x_wso2_prefix_header(self):
+        # any x-wso2-* response header is a WSO2 marker (prefix match)
+        r = _result(headers={"x-wso2-api-id": "abcdef", "server": "nginx"})
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "wso2" in names
+
+    def test_wso2_does_not_fire_on_plain_nginx(self):
+        r = _result(headers={"server": "nginx/1.24.0"})
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "wso2" not in names
+        assert "nginx" in names
+
     def test_cloudflare_mapi_example(self):
         r = _result(
             ips=["104.18.1.79"],

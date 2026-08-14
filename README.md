@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.27
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.28
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -262,7 +262,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.27
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.28
 
 api.example.com:443
 ip        45.60.16.239
@@ -384,7 +384,7 @@ serves plain nginx to normal requests). See
 
 ### Signature coverage
 
-**70 vendors** across six families — each one a file under
+**71 vendors** across six families — each one a file under
 `w4f/signatures/` (copy `_template.py` to add one; see
 [`docs/vendor-signatures.md`](docs/vendor-signatures.md) for the
 contributor guide):
@@ -399,10 +399,10 @@ contributor guide):
   Armor, Radware, Reblaze, Barracuda, Huawei Cloud WAF, SafeDog.
 - **Bot management** (5): DataDome, PerimeterX/HUMAN, Kasada, Shape
   Security, Arkose.
-- **API gateways / platform edges** (14): Kong, Tyk, Apigee, Azure API
+- **API gateways / platform edges** (15): Kong, Tyk, Apigee, Azure API
   Management, Tencent gateway (stgw/tRPC), Envoy, HAProxy, Tengine,
   OpenResty, Cloudflare Workers, Vercel, Google Cloud Run, AWS App Runner,
-  SGW (Shopee/Sea).
+  SGW (Shopee/Sea), **WSO2** (API Manager / Carbon gateway).
 - **Plain origins** (6): nginx, Apache, IIS, Caddy, LiteSpeed, Varnish.
 - **Platforms** (5): Google GFE, Wix Pepyaka, Squarespace, Azure App
   Service, ByteDance TLB.

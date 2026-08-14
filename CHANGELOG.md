@@ -5,6 +5,23 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.28] — 2026-08-14
+
+New vendor: **wso2** (API Manager / Carbon gateway).
+
+- `w4f/signatures/gateways/wso2.py` — `server: WSO2 Carbon Server` (set by
+  WSO2's own Tomcat connector config in product-is and product-apim
+  `catalina-server.xml`, confirmed from source) plus the `x-wso2-*` header
+  prefix (gateway metadata headers). The API Manager gateway's fault JSON
+  body (`{"fault":{"code":9009xx,...}}`) is documented as the body-side
+  signal but is not expressible in the signature schema (headers/cookies/
+  cert/cname/ptr/nets only).
+- `wso2` gets bright-red in the verdict color map (distinct from the CDN
+  hues).
+- README coverage list 70 → 71; docs signal-family + color-table entries.
+- +3 tests (212 total): server-header positive, x-wso2-* prefix positive,
+  plain-nginx negative.
+
 ## [0.1.27] — 2026-08-14
 
 Public Python API — fingerprint a host without the CLI.
