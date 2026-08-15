@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 
+from w4f import attribution as ATT
+from w4f.attribution import attribute
 from w4f.vendors import INTERESTING_HEADERS
 
 # ANSI
@@ -155,6 +157,51 @@ def _is_weak(m: dict) -> bool:
     return bool(cats) and not (cats & _HARD_CATS)
 
 
+def _attribution(r: dict) -> dict:
+    """The result's attribution, computed on demand for older result trees.
+
+    ``probe_one`` stores it, but ``--json`` files written before the model
+    existed (and hand-built test fixtures) do not carry one — deriving it
+    here keeps every renderer working on both.
+    """
+    att = r.get("attribution")
+    return att if att else attribute(r)
+
+
+# Confidence bands are what a reader acts on; the number is the tiebreak.
+_BAND_SHORT = {ATT.HIGH: "HIGH", ATT.MEDIUM: "MED", ATT.LOW: "LOW"}
+_BAND_COLOR = {ATT.HIGH: _GREEN, ATT.MEDIUM: _YELLOW, ATT.LOW: _DIM}
+
+
+def _conf_cell(att: dict) -> str:
+    """``HIGH 92`` — band first, because that is the decision."""
+    if att.get("state") == ATT.STATE_AMBIGUOUS:
+        cands = att.get("candidates") or []
+        if cands:
+            band = _BAND_SHORT.get(cands[0].get("confidence"), "?")
+            return f"{band} {cands[0].get('score', 0)}"
+        return "-"
+    if att.get("score") is None:
+        return "-"
+    return f"{_BAND_SHORT.get(att.get('confidence'), '?')} {att['score']}"
+
+
+def _basis_pretty(basis) -> str:
+    """``net + cname + hdr`` — spaced for the per-host block."""
+    return " + ".join(_CAT_ABBR.get(c, c) for c in (basis or [])) or "-"
+
+
+def _candidate_line(cand: dict, indent: str = "  ", width: int = 30) -> str:
+    """``  cloudflare                     HIGH  92`` — one candidate, aligned."""
+    vendor = cand.get("vendor", "?")
+    color = _vendor_color(vendor)
+    name = _wrap(vendor, _BOLD + color) if color else _wrap(vendor, _BOLD)
+    pad = " " * max(1, width - len(vendor))
+    band = cand.get("confidence") or "?"
+    band_txt = _wrap(f"{band:<6}", _BAND_COLOR.get(band, ""))
+    return f"{indent}{name}{pad}{band_txt}{cand.get('score', 0):>3}"
+
+
 def fmt_verdict(verdict: list[dict]) -> str:
     if not verdict:
         return "unknown-edge (no signature matched)"
@@ -163,33 +210,14 @@ def fmt_verdict(verdict: list[dict]) -> str:
     )
 
 
-def _verdict_line(ver: list[dict]) -> str:
-    """Smarter verdict formatting: the primary vendor on its own highlighted
-    line; secondary vendors (origin layers) dimmed underneath."""
-    if not ver:
-        return _row("verdict", _wrap("no signature matched (unknown edge)", _DIM))
-    lines = []
-    for i, m in enumerate(ver):
-        ev = "; ".join(m["evidence"])
-        color = _vendor_color(m["vendor"])
-        counts = _wrap(f"({m.get('confidence', 0)}%, {_basis(m)})", _DIM)
-        if i == 0:
-            name = _wrap(m["vendor"], _BOLD + color) if color else _wrap(m["vendor"], _BOLD)
-            lines.append(_row("verdict", f"{name} {counts}: {ev}"))
-        else:
-            name = _wrap(m["vendor"], _DIM)
-            lines.append(_row("       ", f"{name} {counts}: {ev}"))
-    return "\n".join(lines)
-
-
 def fmt_block(r: dict) -> str:
-    if r.get("error"):
+    att = _attribution(r)
+    if r.get("error") and not (r.get("verdict") or (r.get("tls") or {}).get("cert")):
         return f"{r['hostport']}\n{_row('error', _wrap(r['error'], _RED))}"
 
     res = r.get("resolved") or {}
     tls = r.get("tls") or {}
     cert = tls.get("cert") or {}
-    ver = r.get("verdict") or []
 
     lines = [
         _wrap(r["hostport"], _CYAN),
@@ -289,7 +317,7 @@ def fmt_block(r: dict) -> str:
             for hdr in interesting[:8]:
                 lines.append(_row("  hdr", hdr))
 
-    lines.append(_verdict_line(ver))
+    lines.extend(_analysis_sections(att, r))
 
     blk = r.get("block")
     if blk:
@@ -448,24 +476,31 @@ def fmt_summary_table(results: list[dict]) -> str:
     for r in results:
         ver = r.get("verdict") or []
         top = ver[0] if ver else {}
-        # A host that failed to probe has no edge to report — "unknown" would
-        # claim we looked and found nothing. It can still carry a DNS-level
-        # verdict though (CNAME/PTR/netblock resolve before the handshake),
-        # and that verdict is worth showing even when the connect failed.
-        if ver:
+        att = _attribution(r)
+        state = att.get("state")
+        # The EDGE cell reports the STATE, not just a name: an ambiguous pair
+        # collapsed to its higher-scoring half reads as a confident answer,
+        # and an intercepted host's "edge" may not be the target's at all.
+        if state == ATT.STATE_AMBIGUOUS:
+            edge = "AMBIGUOUS"
+        elif state == ATT.STATE_INTERCEPTED:
+            edge = "INTERCEPTED"
+        elif state == ATT.STATE_ERROR:
+            edge = "-"
+        elif ver:
             edge = top.get("vendor", "unknown")
+            if len(ver) > 1:
+                edge += f" +{len(ver) - 1}"
         else:
-            edge = "-" if r.get("error") else "unknown"
-        if ver and len(ver) > 1:
-            edge += f" +{len(ver) - 1}"
+            edge = "unknown"
         notes = " ".join(t for t, _ in _flag_tokens(r))
         if len(notes) > 44:
             notes = notes[:41] + "..."
         plain.append({
             "host": r["hostport"],
             "edge": edge,
-            "conf": f"{top.get('confidence', 0)}%" if ver else "-",
-            "basis": _basis(top) if ver else "-",
+            "conf": _conf_cell(att),
+            "basis": _basis(top) if (ver and state != ATT.STATE_INTERCEPTED) else "-",
             "tls": _tls_cell(r),
             "cert": _cert_cell(r),
             "http": _status_code(r),
@@ -563,60 +598,100 @@ def _evidence_summary(m: dict, limit: int = 3) -> str:
     return shown
 
 
-def fmt_compact_block(r: dict) -> str:
-    """Per-host triage block — the facts the table has no room for.
+def _observed_rows(r: dict, indent: str = "    ") -> list[str]:
+    """OBSERVED — the facts the scan collected, with no vendor claim."""
+    rows = []
+    for label, value in ATT.observations(r):
+        rows.append(f"{indent}{label:<10}{value}")
+    return rows
 
-    Deliberately NOT a restatement of the table row: it carries the evidence
-    behind the verdict, the layer stack (edge in front of origin), the
-    redirect chain that decides which host answered, cert identity, the pin
-    value, and — for an unknown edge — the headers that matched nothing.
-    Full headers and full evidence stay behind --verbose (fmt_block).
+
+def fmt_compact_block(r: dict) -> str:
+    """Per-host block, driven by the attribution STATE.
+
+    Each state answers a different question, so each gets its own shape: a
+    named edge with its basis, a pair of candidates too close to separate,
+    the raw observations behind an unknown, or the warning that the identity
+    on the wire belongs to a box on our own path. Full evidence and response
+    detail stay behind --verbose (fmt_block).
     """
+    att = _attribution(r)
+    state = att.get("state")
     head = _wrap(r["hostport"], _CYAN)
     flags = _flags(r)
     if flags:
         head += "  " + "  ".join(flags)
     lines = [head]
 
-    ver = r.get("verdict") or []
-    if r.get("error"):
-        lines.append(_row2("error", _wrap(r["error"][:100], _CRIT)))
-        # A connect failure still leaves DNS-level evidence on the table, so
-        # fall through and render whatever WAS collected instead of stopping
-        # here; only a host with nothing at all ends after the error line.
-        if not ver and not ((r.get("tls") or {}).get("cert")):
-            return "\n".join(lines)
+    if state == ATT.STATE_INTERCEPTED:
+        icept = att.get("interception") or {}
+        lines.append(_row2("EDGE", _wrap("NOT DETERMINED", _DIM)))
+        lines.append(_row2("PATH", _wrap(
+            f"INTERCEPTED by {icept.get('by', '?')}", _CRIT)))
+        lines.append(_row2("", _wrap(
+            "the identity below may belong to the interception device, "
+            "not this host", _YELLOW)))
+        lines.append("  OBSERVED")
+        lines.extend(_observed_rows(r))
+        return "\n".join(lines)
 
+    if state == ATT.STATE_ERROR:
+        lines.append(_row2("error", _wrap(str(att.get("error", ""))[:100], _CRIT)))
+        return "\n".join(lines)
+
+    if state == ATT.STATE_UNKNOWN:
+        lines.append(_row2("EDGE", _wrap("UNKNOWN", _DIM)))
+        obs = _observed_rows(r)
+        if obs:
+            lines.append("  OBSERVED")
+            lines.extend(obs)
+        leads = _unmatched_leads(r)
+        if leads:
+            # the fingerprintable headers that matched NO signature: an
+            # unknown is a tool gap, and this is where the next rule starts
+            lines.append(_row2("leads", _wrap(leads, _YELLOW)))
+        return "\n".join(lines)
+
+    if state == ATT.STATE_AMBIGUOUS:
+        cands = att.get("candidates") or []
+        lines.append(_row2("EDGE", _wrap("AMBIGUOUS", _YELLOW)))
+        for cand in cands:
+            lines.append(_candidate_line(cand, indent="    "))
+        lines.append("  BASIS")
+        for cand in cands:
+            lines.append(f"    {cand.get('vendor', '?'):<20}"
+                         f"{_wrap(_basis_pretty(cand.get('basis')), _DIM)}")
+        lines.extend(_context_rows(r))
+        return "\n".join(lines)
+
+    # ATTRIBUTED
+    lines.append(_candidate_line({"vendor": att.get("vendor", "?"),
+                                  "confidence": att.get("confidence"),
+                                  "score": att.get("score", 0)}, indent="  "))
+    basis = _basis_pretty(att.get("basis"))
+    if att.get("deployment"):
+        basis += f"   ({att['deployment']})"
+    suffix = ""
+    if att.get("basis") and not (set(att["basis"]) & _HARD_CATS):
+        suffix = _wrap("   (headers only — spoofable)", _YELLOW)
+    lines.append("  " + _wrap(basis, _DIM) + suffix)
+    for alt in att.get("alternatives") or []:
+        role = f"  ({alt['role']})" if alt.get("role") == "origin" else ""
+        lines.append(_wrap(f"    {alt.get('vendor', '?')}  {alt.get('score', 0)}{role}",
+                           _DIM))
+    if att.get("error"):
+        # evidence survived a failed probe — show both, not one or the other
+        lines.append(_row2("error", _wrap(str(att["error"])[:80], _CRIT)))
+    lines.extend(_context_rows(r))
+    return "\n".join(lines)
+
+
+def _context_rows(r: dict) -> list[str]:
+    """The response facts a decision needs next to the attribution."""
     tls = r.get("tls") or {}
     http = tls.get("http") or {}
     cert = tls.get("cert") or {}
-
-    if ver:
-        top = ver[0]
-        color = _vendor_color(top["vendor"])
-        name = _wrap(top["vendor"], _BOLD + color) if color else _wrap(top["vendor"], _BOLD)
-        detail = f"{top.get('confidence', 0)}%  {_basis(top)}"
-        # cloud vs on-prem decides which interception route is even possible:
-        # a cloud edge is anycast/SNI-routed with the origin elsewhere, an
-        # appliance sits on the origin's own address
-        if top.get("deployment"):
-            detail += _wrap(f"  ({top['deployment']})", _DIM)
-        if _is_weak(top):
-            detail += _wrap("  (headers only — spoofable)", _YELLOW)
-        lines.append(_row2("edge", f"{name}  {detail}"))
-        ev = _evidence_summary(top)
-        if ev:
-            lines.append(_row2("", _wrap(ev, _DIM)))
-        for m in ver[1:]:
-            lines.append(_row2("stack", _wrap(
-                f"{m['vendor']}  {m.get('confidence', 0)}%  {_basis(m)}", _DIM)))
-    else:
-        lines.append(_row2("edge", _wrap("unknown — no signature matched", _DIM)))
-        leads = _unmatched_leads(r)
-        if leads:
-            lines.append(_row2("leads", _wrap(leads, _YELLOW)))
-
-    # what answered, and over what
+    lines = []
     chain_bits = []
     if http.get("redirects"):
         hops = len(http["redirects"])
@@ -629,7 +704,6 @@ def fmt_compact_block(r: dict) -> str:
         chain_bits.append(f"TLS{_tls_cell(r)}")
     if chain_bits:
         lines.append(_row2("path", " · ".join(chain_bits)))
-
     cert_bits = []
     issuer = str(cert.get("issuer_org") or cert.get("issuer") or "").split(",")[0]
     if issuer:
@@ -643,15 +717,9 @@ def fmt_compact_block(r: dict) -> str:
         cert_bits.append("chain NOT verified")
     if cert_bits:
         lines.append(_row2("cert", " · ".join(cert_bits)))
-    # SAN in the triage view, not just --verbose: the cert's scope is where
-    # sibling hostnames and wildcard reach show up, which is exactly what a
-    # sweep is looking for. Capped tighter than --verbose (a wildcard cert
-    # can carry 50+) so the block stays one screen per host.
     san_line = _san_summary(cert, limit=3)
     if san_line:
         lines.append(_row2("san", san_line))
-    # Loud on purpose: when the chain was re-signed on the way out, the cert
-    # and the pin below describe the middlebox, not the target.
     icept = r.get("interception")
     if icept:
         lines.append(_row2("!", _wrap(
@@ -660,7 +728,83 @@ def fmt_compact_block(r: dict) -> str:
             f"middlebox's, NOT this host's", _CRIT)))
     if cert.get("spki_sha256"):
         lines.append(_row2("pin", _wrap(f"spki {cert['spki_sha256'][:16]}…", _DIM)))
-    return "\n".join(lines)
+    return lines
+
+
+def _analysis_sections(att: dict, r: dict) -> list[str]:
+    """--verbose: WHY the attribution was reached.
+
+    EDGE names the call, EVIDENCE lists the observations behind it grouped
+    by category, ALTERNATIVES shows what else was in play. Scores are shown
+    as one number per candidate — never as the arithmetic that produced it.
+    """
+    state = att.get("state")
+    out: list[str] = [""]
+
+    if state == ATT.STATE_INTERCEPTED:
+        icept = att.get("interception") or {}
+        out.append("EDGE")
+        out.append(_row2("", _wrap("NOT DETERMINED", _DIM)))
+        out.append("PATH")
+        out.append(_row2("", _wrap(f"INTERCEPTED by {icept.get('by', '?')}", _CRIT)))
+        out.append(_row2("", _wrap(str(icept.get("evidence", "")), _DIM)))
+        out.append(_row2("", _wrap(
+            "the identity above may belong to the interception device", _YELLOW)))
+        return out
+
+    if state == ATT.STATE_UNKNOWN:
+        out.append("EDGE")
+        out.append(_row2("", _wrap("UNKNOWN — no signature matched", _DIM)))
+        leads = _unmatched_leads(r, limit=8)
+        if leads:
+            out.append("LEADS")
+            out.append(_row2("", _wrap(leads, _YELLOW)))
+        return out
+
+    if state == ATT.STATE_ERROR:
+        out.append("EDGE")
+        out.append(_row2("", _wrap(f"ERROR — {att.get('error', '')}", _CRIT)))
+        return out
+
+    if state == ATT.STATE_AMBIGUOUS:
+        out.append("EDGE")
+        out.append(_row2("", _wrap("AMBIGUOUS — candidates too close to separate",
+                                   _YELLOW)))
+        for cand in att.get("candidates") or []:
+            out.append(_candidate_line(cand, indent="  "))
+            out.append("  " + _wrap(f"  {_basis_pretty(cand.get('basis'))}", _DIM))
+            out.append("  EVIDENCE")
+            for ev in cand.get("evidence") or []:
+                out.append(f"    {ev.get('label', ''):<14}{ev.get('detail', '')[:80]}")
+        return out
+
+    # ATTRIBUTED
+    out.append("EDGE")
+    out.append(_candidate_line({"vendor": att.get("vendor", "?"),
+                                "confidence": att.get("confidence"),
+                                "score": att.get("score", 0)}, indent="  "))
+    detail = _basis_pretty(att.get("basis"))
+    if att.get("deployment"):
+        detail += f"   ({att['deployment']})"
+    out.append("  " + _wrap(f"  {detail}", _DIM))
+    if att.get("error"):
+        out.append(_row2("", _wrap(f"probe error: {att['error']}", _CRIT)))
+    evidence = att.get("evidence") or []
+    if evidence:
+        out.append("")
+        out.append("EVIDENCE")
+        for ev in evidence:
+            label = ev.get("label") or ""
+            out.append(f"  {label:<14}{ev.get('detail', '')[:90]}")
+    alts = att.get("alternatives") or []
+    if alts:
+        out.append("")
+        out.append("ALTERNATIVES")
+        for alt in alts:
+            role = f"   ({alt['role']})" if alt.get("role") == "origin" else ""
+            out.append(_candidate_line(alt, indent="  ") + _wrap(role, _DIM))
+            out.append("  " + _wrap(f"  {_basis_pretty(alt.get('basis'))}", _DIM))
+    return out
 
 
 def fmt_rollup(results: list[dict], elapsed: float | None = None) -> str:
@@ -812,6 +956,9 @@ CSV_HEADER = [
     # appended (0.1.32) — new columns go on the END so existing column
     # indexes stay valid for anything already parsing this file
     "basis", "final_host",
+    # appended (0.1.35) — the attribution state, so a consumer can tell an
+    # ATTRIBUTED row from an AMBIGUOUS or INTERCEPTED one without re-deriving
+    "state",
 ]
 
 
@@ -852,6 +999,7 @@ def csv_doc(results: list[dict]) -> str:
             r.get("error", ""),
             _basis(top) if top else "",
             http.get("final_host", ""),
+            _attribution(r).get("state", ""),
         ])
     return buf.getvalue()
 
@@ -913,6 +1061,7 @@ def sarif_doc(results: list[dict], tool_version: str = "") -> str:
         blk = r.get("block") or {}
         ver = r.get("verdict") or []
         top = ver[0] if ver else {}
+        _att = _attribution(r)
         level = _sarif_level(r)
         props = {
             "hostport": r.get("hostport", host),
@@ -929,10 +1078,23 @@ def sarif_doc(results: list[dict], tool_version: str = "") -> str:
             "signals": top.get("signals", ""),
             "categories": top.get("categories", []) or [],
             "basis": _basis(top) if top else "",
+            "state": _att.get("state", ""),
+            "confidence_band": _att.get("confidence") or "",
             "evidence": top.get("evidence", []) or [],
         }
 
-        if err:
+        if _att.get("state") == ATT.STATE_INTERCEPTED:
+            # the identity on the wire may be the middlebox's, so this must
+            # never be filed under the vendor rule for the host
+            _rule("w4f/interception", "tls-interception",
+                  "connection re-signed by a TLS-inspection middlebox on the "
+                  "scanner's path", "warning")
+            rule_id = "w4f/interception"
+            by = (r.get("interception") or {}).get("by", "?")
+            message = (f"{host}: TLS intercepted by {by} between the scanner and "
+                       f"the target — certificate and SPKI pin describe that "
+                       f"device, not this host")
+        elif err:
             _rule("w4f/probe-error", "probe-error", "host could not be scanned", "error")
             rule_id = "w4f/probe-error"
             message = f"{host}: {err}"

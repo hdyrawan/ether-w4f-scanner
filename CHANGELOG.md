@@ -5,6 +5,71 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.35] — 2026-08-15
+
+Evidence-based attribution. The scanner already separated *collecting* facts
+from *matching* them; what was missing was a layer that says what the match
+adds up to — and, more importantly, when a single answer is not warranted.
+No new dependencies (the new module is stdlib-only), no new CLI flags, no
+change to the signature format or to how scores are computed.
+
+**The model** (`w4f/attribution.py`, pure functions over the result dict,
+documented in [`docs/attribution-model.md`](docs/attribution-model.md)):
+
+```
+observations  ->  evidence  ->  attribution  ->  state
+ (scanner)      (fingerprint)  (attribution.py)
+```
+
+- **Observations** — the facts the scan collected, unchanged and still owned
+  by the scanner; `observations()` is a view over them, not a copy.
+- **Evidence** — observations that matched a signature, each carrying the
+  category it came from. Verdict entries gain `evidence_items`
+  (`{category, detail}`) recorded where the category is already known, so
+  nothing downstream re-parses a formatted string. `evidence` is unchanged.
+- **Attribution** — `result["attribution"]`: state, vendor, score,
+  confidence band, basis, role, deployment, alternatives, grouped evidence.
+  Additive; `verdict` keeps its exact shape.
+- **State** — `ATTRIBUTED`, `AMBIGUOUS`, `UNKNOWN`, `INTERCEPTED`, `ERROR`.
+
+**Why the states matter.** "No vendor name" had several very different
+causes and they all rendered the same way:
+
+- **`AMBIGUOUS`** — two edge candidates within 8 points, both at MEDIUM or
+  better, are now reported side by side with their separate bases instead of
+  collapsing to the higher one and sounding sure. Only *edge* candidates
+  compete: an origin under a real edge (`imperva` over `nginx`) is a layer,
+  not a rival claim, so it never triggers ambiguity.
+- **`INTERCEPTED`** — never carries a vendor attribution, in the console
+  **and** now in SARIF, which previously filed such a host under
+  `w4f/<vendor>` — reporting the middlebox's re-signed identity as the
+  target's edge. It now files under `w4f/interception`.
+- **`ERROR` vs `UNKNOWN`** — a host that failed to connect but resolved a
+  vendor CNAME stays attributed, with the error alongside. DNS resolves
+  before the handshake; a socket failure does not make the CNAME untrue.
+
+**Confidence bands.** `HIGH` ≥ 70, `MEDIUM` ≥ 30, `LOW` below — shown band
+first, score second. The score is a category-weight sum, not a probability,
+so `HIGH` means several independent kinds of evidence agreed (more than the
+strongest single category can supply alone).
+
+**Output.** Default stays concise and decision-oriented, now shaped by the
+state. `--verbose` becomes the analytical view: an `EDGE` section naming the
+call, `EVIDENCE` grouped by category label (Network / Certificate / CNAME /
+PTR / HTTP / Cookie), and `ALTERNATIVES` for what else was in play. Score
+arithmetic is never printed. `--csv` appends a `state` column (appended, so
+existing column indexes stay valid); SARIF reports `state` and
+`confidence_band` in properties.
+
+- `role_of()` falls back to the signature table when a verdict entry carries
+  no `deployment`, so older `--json` trees do not promote every origin to a
+  rival edge candidate.
+- Removed `_verdict_line()`, dead once the verbose view moved to the
+  evidence sections; its test coverage was retargeted at the live renderer.
+- +40 tests (363 total), including regressions for strong attribution,
+  weak/single-category attribution, ambiguous candidates, unknown results,
+  interception, and host errors with surviving DNS evidence.
+
 ## [0.1.34] — 2026-08-15
 
 Findings from a 139-host production sweep across three regional markets.

@@ -9,6 +9,8 @@ import socket
 import ssl
 from datetime import datetime, timezone
 
+from w4f.attribution import attribute
+
 log = logging.getLogger(__name__)
 
 try:
@@ -450,6 +452,10 @@ def fingerprint(result: dict) -> list[dict]:
     matches = []
     for name, rules in VENDORS.items():
         evidence = []
+        # Structured mirror of `evidence`, recorded where the category is
+        # already known so the attribution layer never has to re-parse the
+        # formatted strings. Additive: `evidence` keeps its exact shape.
+        items: list[dict] = []
         cats: set[str] = set()
         for hname, hre in rules.get("headers", {}).items():
             # A trailing "*" is a PREFIX match against any header name:
@@ -462,6 +468,7 @@ def fingerprint(result: dict) -> list[dict]:
                     if hk.lower().startswith(prefix) and (
                             hre is None or re.search(hre, hv, re.I)):
                         evidence.append(f"header {hk}: {hv[:60]}")
+                        items.append({"category": "headers", "detail": f"{hk}: {hv[:60]}"})
                         cats.add("headers")
             else:
                 val = headers.get(hname)
@@ -469,31 +476,38 @@ def fingerprint(result: dict) -> list[dict]:
                     continue
                 if hre is None or re.search(hre, val, re.I):
                     evidence.append(f"header {hname}: {val[:60]}")
+                    items.append({"category": "headers", "detail": f"{hname}: {val[:60]}"})
                     cats.add("headers")
         for cre in rules.get("cookies", []):
             for cval in set_cookies:
                 if re.search(cre, cval):
                     evidence.append(f"cookie: {cval[:60]}")
+                    items.append({"category": "cookies", "detail": cval[:60]})
                     cats.add("cookies")
         cre = rules.get("cert")
         if cre and re.search(cre, cert_text):
             evidence.append(f"cert: {cert.get('issuer_org') or cert.get('issuer')}")
+            items.append({"category": "cert",
+                          "detail": str(cert.get('issuer_org') or cert.get('issuer'))})
             cats.add("cert")
         cname_re = rules.get("cname")
         if cname_re and re.search(cname_re, cnames):
             first = (result.get("cname") or [""])[0]
             evidence.append(f"cname: {first}")
+            items.append({"category": "cname", "detail": first})
             cats.add("cname")
         ptr_re = rules.get("ptr")
         if ptr_re and re.search(ptr_re, ptrs):
             first = (result.get("ptr") or [""])[0]
             evidence.append(f"ptr: {first}")
+            items.append({"category": "ptr", "detail": first})
             cats.add("ptr")
         for net in vendor_nets(name):
             for ip in ips:
                 try:
                     if ipaddress.ip_address(ip) in net:
                         evidence.append(f"netblock: {ip} in {net}")
+                        items.append({"category": "netblock", "detail": f"{ip} in {net}"})
                         cats.add("netblock")
                         break
                 except ValueError:
@@ -505,7 +519,7 @@ def fingerprint(result: dict) -> list[dict]:
             match = {"vendor": name, "signals": len(evidence),
                      "confidence": min(conf, 100),
                      "categories": [c for c in CONF_CATEGORY_ORDER if c in cats],
-                     "evidence": evidence}
+                     "evidence": evidence, "evidence_items": items}
             # How the vendor sits in front of the origin — this is what
             # decides whether an interception route can target one IP at all.
             # Absent for vendors sold BOTH ways (Imperva Incapsula vs
@@ -999,4 +1013,10 @@ def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
             result["grpc"] = grpc_probe(host, port, timeout)
     except Exception as e:
         result["error"] = f"probe failed: {e}"
+    # Interpretation layer, last: what the collected evidence adds up to
+    # (state, primary candidate, alternatives). Additive — `verdict` keeps
+    # its exact shape, so existing --json/--csv/--sarif consumers are
+    # unaffected. Runs even on the failure path so an errored host still
+    # reports whatever independent evidence survived.
+    result["attribution"] = attribute(result)
     return result

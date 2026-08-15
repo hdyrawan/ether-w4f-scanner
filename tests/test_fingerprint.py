@@ -366,7 +366,9 @@ class TestSignalCounting:
         ver = fingerprint(_result(headers={"server": "nginx"}))
         assert ver == [{"vendor": "nginx", "signals": 1, "confidence": 7,
                         "categories": ["headers"], "deployment": "origin",
-                        "evidence": ["header server: nginx"]}]
+                        "evidence": ["header server: nginx"],
+                        "evidence_items": [{"category": "headers",
+                                            "detail": "server: nginx"}]}]
 
 
 class TestVerdictRanking:

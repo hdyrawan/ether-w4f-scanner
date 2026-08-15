@@ -93,29 +93,26 @@ class TestVendorColors:
         assert _vendor_color("cloudflare") == ""
 
     def test_non_tty_is_plain(self):
-        # pytest capture is not a TTY — verdict line must be plain
-        from w4f.report import _verdict_line
-        line = _verdict_line([{"vendor": "cloudflare", "signals": 3,
-                               "confidence": 82, "categories": ["netblock"],
-                               "evidence": []}])
-        assert "\033[" not in line
-        # confidence + what it rests on; the raw signal count is verbose-only
-        assert "cloudflare (82%, net)" in line
+        # pytest capture is not a TTY — the block must carry no escapes
+        from w4f.report import fmt_compact_block
+        out = fmt_compact_block(_result_with_verdict())
+        assert "\033[" not in out
+        assert "cloudflare" in out
 
-    def test_verdict_line_primary_own_line_secondaries_dimmed(self):
-        # the triage format: primary vendor on the "verdict" row, secondary
-        # vendors on continuation rows
-        from w4f.report import _verdict_line
-        ver = [{"vendor": "imperva", "signals": 2, "confidence": 60,
-                "categories": ["netblock", "headers"], "evidence": ["x-iinfo"]},
-               {"vendor": "nginx", "signals": 1, "confidence": 7,
-                "categories": ["headers"], "evidence": ["header server: nginx"]}]
-        out = _verdict_line(ver)
-        lines = out.splitlines()
-        assert lines[0].startswith("verdict")
-        assert "imperva (60%, net+hdr)" in lines[0]
-        assert lines[1].startswith("       ")  # continuation, aligned
-        assert "nginx (7%, hdr)" in lines[1]
+    def test_primary_then_alternatives(self):
+        # the primary attribution leads; layers underneath follow it
+        from w4f.report import fmt_compact_block
+        r = _result_with_verdict()
+        r["verdict"] = [
+            {"vendor": "imperva", "signals": 2, "confidence": 60,
+             "categories": ["netblock", "headers"], "evidence": ["x-iinfo"]},
+            {"vendor": "nginx", "signals": 1, "confidence": 7,
+             "categories": ["headers"], "deployment": "origin",
+             "evidence": ["header server: nginx"]},
+        ]
+        lines = [ln for ln in fmt_compact_block(r).splitlines() if ln.strip()]
+        assert "imperva" in lines[1]
+        assert any("nginx" in ln and "(origin)" in ln for ln in lines)
 
 
 def _results_fixture():
@@ -179,23 +176,29 @@ class TestSummaryTable:
 
     def test_columns_align_when_colored(self, monkeypatch):
         # padding must use the PLAIN cell length — padding inside the ANSI
-        # escape shifts every column to the right
+        # escape shifts every column to the right. The exact property: the
+        # colored render with escapes stripped IS the plain render.
         import re as _re
         import sys as _sys
         from unittest import mock
         from w4f.report import fmt_summary_table
+
+        plain = fmt_summary_table(self._results())   # pytest capture: no TTY
 
         class T:
             def isatty(self): return True
             def write(self, s): pass
         monkeypatch.setenv("COLUMNS", "200")
         with mock.patch.object(_sys, "stdout", T()):
-            out = fmt_summary_table(self._results())
-        assert "\033[" in out                       # colored
-        lines = [_re.sub(r"\033\[[0-9;]*m", "", ln) for ln in out.splitlines()]
-        conf_col = lines[0].index("CONF")
-        for ln in lines[1:]:
-            assert ln[conf_col:conf_col + 5].strip().endswith(("%", "-"))
+            colored = fmt_summary_table(self._results())
+        assert "\033[" in colored                    # actually colored
+        assert _re.sub(r"\033\[[0-9;]*m", "", colored) == plain
+
+    def test_conf_cell_is_band_first(self):
+        from w4f.report import fmt_summary_table
+        out = fmt_summary_table(self._results())
+        assert "HIGH 82" in out          # band, then score
+        assert "MED 60" in out
 
     def test_no_markdown(self):
         from w4f.report import fmt_summary_table
@@ -218,15 +221,14 @@ class TestCompactBlock:
         out = fmt_compact_block(_result_with_verdict())
         assert "api.example.com:443" in out
         assert "cloudflare" in out
-        assert "82%" in out
-        assert "net+cert+cname+hdr" in out
+        assert "HIGH" in out and "82" in out          # band first, score after
+        assert "net + cert + cname + hdr" in out      # basis, spaced
 
     def test_block_adds_facts_the_table_lacks(self):
-        # the whole point of the block: evidence, path, cert, pin — none of
-        # which fits in a table row
+        # the block carries what the table row cannot: path, cert, pin.
+        # Raw evidence strings moved to --verbose (the analytical view).
         from w4f.report import fmt_compact_block
         out = fmt_compact_block(_result_with_verdict())
-        assert "header server: cloudflare" in out      # evidence
         assert "200" in out and "TLS1.3 h2" in out     # path
         assert "Example CA" in out and "100d left" in out
         assert "chain verified" in out
@@ -258,10 +260,11 @@ class TestCompactBlock:
         r["tls"]["cert"].pop("san", None)
         assert "\n  san" not in fmt_compact_block(r)
 
-    def test_stack_lists_secondary_vendors(self):
+    def test_alternatives_listed_under_the_primary(self):
         from w4f.report import fmt_compact_block
         out = fmt_compact_block(_results_fixture()[1])
-        assert "stack" in out and "nginx" in out
+        assert "imperva" in out
+        assert "nginx" in out and "(origin)" in out
 
     def test_weak_verdict_marked(self):
         from w4f.report import fmt_compact_block
@@ -281,7 +284,7 @@ class TestCompactBlock:
             "content-type": "text/html", "x-frame-options": "deny",
         }
         out = fmt_compact_block(r)
-        assert "unknown" in out
+        assert "UNKNOWN" in out
         assert "server: acme-edge" in out
         assert "x-acme-pop: sin1" in out
         assert "content-type" not in out      # noise excluded

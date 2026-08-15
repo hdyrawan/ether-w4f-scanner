@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.34
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.35
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -18,7 +18,8 @@
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [Release notes → CHANGELOG.md](CHANGELOG.md) ·
-[Vendor signature reference → docs/vendor-signatures.md](docs/vendor-signatures.md)
+[Vendor signature reference → docs/vendor-signatures.md](docs/vendor-signatures.md) ·
+[Attribution model → docs/attribution-model.md](docs/attribution-model.md)
 
 Passive **TLS / CDN / WAF / edge fingerprinting** for API endpoints. For any
 `host[:port]` it walks the standard client path — DNS (A/AAAA/CNAME/PTR), one
@@ -31,11 +32,57 @@ w4f --target-file hosts.txt
 ```
 
 ```
-HOST                    EDGE        CONF  BASIS               TLS     CERT                 HTTP  NOTES
-api.example.com:443     imperva +1   62%  net+cert+hdr        1.3 h2  Imperva Inc 64d       403  mTLS  BLOCK imperva
-shop.example.net:443    cloudflare   82%  net+cert+cname+hdr  1.3 h2  SSL Corporati… 73d    200  ->www.shop.example.net
-origin.example.org:443  nginx         7%  hdr                 1.3 h2  Let's Encrypt 21d     200
-edge.example.io:443     unknown        -  -                   1.3 h2  GlobalSign nv… 161d   200
+HOST                    EDGE              CONF  BASIS               TLS     CERT               HTTP  NOTES
+api.example.com:443     cloudflare +1  HIGH 92  net+cname+cert+hdr  1.3 h2  Cloudflare 73d      200
+shop.example.net:443    AMBIGUOUS       MED 68  net+cert+hdr        1.3 h2  Cloudflare 73d      200
+edge.example.io:443     unknown              -  -                   1.3 h2  Let's Encrypt 40d   200
+origin.example.org:443  INTERCEPTED          -  -                   1.3 h2  Fortinet -168d      403  INTERCEPTED
+
+api.example.com:443
+  cloudflare                    HIGH   92
+  net + cname + cert + hdr   (cloud)
+    nginx  7  (origin)
+  path    200 · TLS1.3 h2
+  cert    Cloudflare · 73d left · chain verified
+  san     api.example.com, *.example.com
+  pin     spki 7f3a91bbbbbbbbbb…
+
+shop.example.net:443
+  EDGE    AMBIGUOUS
+    cloudflare                    MEDIUM 68
+    aws-cloudfront                MEDIUM 64
+  BASIS
+    cloudflare          net + cert + hdr
+    aws-cloudfront      net + cname + cert
+  path    200 · TLS1.3 h2
+  cert    Cloudflare · 73d left · chain verified
+
+edge.example.io:443
+  EDGE    UNKNOWN
+  OBSERVED
+    IP        203.0.113.10
+    CNAME     edge.provider.net
+    TLS       1.3 h2
+    Issuer    Let's Encrypt
+    SPKI      dddddddddddddddd…
+    HTTP      acme-edge
+  leads   server: acme-edge · x-acme-pop: sin1
+
+origin.example.org:443  INTERCEPTED
+  EDGE    NOT DETERMINED
+  PATH    INTERCEPTED by fortinet
+          the identity below may belong to the interception device, not this host
+  OBSERVED
+    IP        203.0.113.20
+    TLS       1.3 h2
+    Issuer    Fortinet
+    SPKI      9701081eeeeeeeee…
+    HTTP      HTTP/1.1 403 Forbidden
+
+── 4 hosts · 3.4s ──────────────────────────────────────────────────────
+edges     cloudflare 1
+unknown   1  (edge.example.io:443)
+flags     errors 0
 ```
 
 `BASIS` is the column that decides whether to believe the row: `net+cert`
@@ -146,7 +193,7 @@ python3 -m pytest           # run the test suite
 ### Verify & uninstall
 
 ```bash
-w4f --version        # e.g. "w4f 0.1.34 — passive TLS / CDN / WAF / edge fingerprinting"
+w4f --version        # e.g. "w4f 0.1.35 — passive TLS / CDN / WAF / edge fingerprinting"
 w4f --help           # full usage
 pipx uninstall w4f   # or: uv tool uninstall w4f / pip uninstall w4f
 ```
@@ -338,43 +385,69 @@ weak      1 verdict rests on headers only (spoofable) — confirm with --verify
 ```
 
 Default mode is the **triage view**: a summary table of every host, a block
-per host with the facts the table has no room for, then a sweep rollup.
+per host, then a sweep rollup. Each block is shaped by the result **state**,
+because "no vendor name" has several very different causes and collapsing
+them loses the decision:
 
-`BASIS` is the column to read before trusting a verdict — it names the
-signal categories behind it (`net` netblock, `cert`, `cname`, `ptr`, `hdr`
-header, `cookie`). `net+cert` is ownership evidence; a bare `hdr` is a
-string the origin can set, which is why `origin.example.org` above is
-flagged *headers only — spoofable*. Hosts are ordered by risk
-(errors, block pages, mTLS, unknown, weak verdicts first) — `--sort host`
-restores alphabetical order, and file outputs are always host-sorted.
+| state | meaning |
+|---|---|
+| named vendor | one candidate is best-evidenced |
+| `AMBIGUOUS` | edge candidates too close to separate — both are shown, rather than silently picking the higher |
+| `UNKNOWN` | scanned, nothing matched. The observations are the lead for the next signature |
+| `INTERCEPTED` | something on the **scanner's** path re-signed the connection; no vendor is attributed and the cert/pin may be the middlebox's |
+| error | the host could not be probed. A host that failed *but* resolved a vendor CNAME still reports that vendor — DNS resolves before the handshake |
 
-An `unknown` host prints a `leads` line with the fingerprintable headers
-that matched **no** signature — that is the raw material for the next
-vendor file (an unknown verdict is a tool gap, not a result).
+`CONF` is the confidence **band** first (`HIGH` ≥ 70, `MED` ≥ 30, `LOW`
+below) and the score second. The score is a sum of category weights, not a
+probability, so `HIGH` means several independent kinds of evidence agreed —
+more than the strongest single category can supply alone. `BASIS` names
+those categories (`net` netblock, `cert`, `cname`, `ptr`, `hdr` header,
+`cookie`); a bare `hdr` is a string the origin can set, and the block marks
+it *headers only — spoofable*.
 
-Add `-v` / `--verbose` for the FULL per-host detail (IPs, cert chain, SPKI
-pin, redirect chain, response headers, complete verdict evidence):
+The full model is documented in
+[`docs/attribution-model.md`](docs/attribution-model.md).
+
+Add `-v` / `--verbose` for the analytical view — the same observations plus
+**why** the attribution was reached: the evidence behind it grouped by
+category, and the alternatives that were in play.
 
 ```
-$ w4f -v --target shop.example.net:443
+$ w4f -v --target api.example.com
 
-shop.example.net:443
+api.example.com:443
 ip        104.18.1.79
-cname     shop.example.net.cdn.cloudflare.net
 tls       TLSv1.3  TLS_AES_256_GCM_SHA384  ALPN h2
-cert      SSL Corporation  (chain verified)
-  san     shop.example.net, www.shop.example.net, *.cdn.example.net, assets.example.net
+cert      Cloudflare, Inc.  (chain verified)
+  san     api.example.com, *.example.com
   valid   2026-06-05 -> 2026-12-11  (73d left)
-  spki    0856752f53199a67bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  spki    7f3a91bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   key     RSA 2048  sha256WithRSAEncryption
 http      HTTP/1.1 200 OK
-  chain   https://www.shop.example.net/
-  final   www.shop.example.net  (headers above are from here)
+  chain   https://www.api.example.com/
+  final   www.api.example.com  (headers above are from here)
   hdr     server=cloudflare
   hdr     cf-ray=9a2b4f55b2f67d43-SIN
-  hdr     cf-cache-status=DYNAMIC
-verdict   cloudflare (82%, net+cert+cname+hdr): header server: cloudflare; header cf-ray: 9a2b4f55b2f67d43-SIN; cname: shop.example.net.cdn.cloudflare.net; netblock: 104.18.1.79 in 104.16.0.0/13
+
+EDGE
+  cloudflare                    HIGH   92
+    net + cname + cert + hdr   (cloud)
+
+EVIDENCE
+  Network       104.18.1.79 in 104.16.0.0/13
+  Certificate   Cloudflare, Inc.
+  CNAME         api.example.com.cdn.cloudflare.net
+  HTTP          server: cloudflare · cf-ray: 9a2b4f55b2f67d43-SIN
+
+ALTERNATIVES
+  nginx                         LOW     7   (origin)
+    hdr
 ```
+
+`EVIDENCE` groups by signal category, so it answers "what would have to be
+false for this to be wrong" — a verdict resting on a netblock and a cert is
+a different claim from one resting on a header. Scores appear as one number
+per candidate; the arithmetic behind them stays out of the output.
 
 The `chain`/`final` rows matter more than they look: the apex is often a
 bare redirector and the WAF only sits on `www`, so they say which host the
