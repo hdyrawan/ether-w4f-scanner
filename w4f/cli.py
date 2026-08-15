@@ -12,7 +12,8 @@ import time
 
 from w4f import __version__
 from w4f.banner import BANNER
-from w4f.report import csv_doc, fmt_block, md_doc, sarif_doc
+from w4f.report import (csv_doc, fmt_block, fmt_compact_block,
+                        fmt_summary_table, md_doc, sarif_doc)
 from w4f.scanner import probe_one
 
 
@@ -268,7 +269,12 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--version", action="version",
                     version=f"%(prog)s {__version__} — {_TAGLINE}")
     ap.add_argument("--quiet", action="store_true",
-                    help="suppress the per-host console block (useful with --json/--md)")
+                    help="suppress ALL console output (banner, summary table, "
+                         "per-host blocks — useful with --json/--md/--csv)")
+    ap.add_argument("-v", "--verbose", action="store_true",
+                    help="show the FULL per-host detail (cert, SPKI, response "
+                         "headers, verdict evidence) instead of the compact "
+                         "triage view; the summary table prints either way")
     return ap
 
 
@@ -313,6 +319,11 @@ def main(argv: list[str] | None = None) -> int:
 
     results = []
     throttle = Throttle(args.delay)
+    total = len(targets)
+    show_progress = (not args.quiet) and total > 1
+    if show_progress:
+        sys.stderr.write(f"\r[0/{total}] scanning...")
+        sys.stderr.flush()
     with cf.ThreadPoolExecutor(max_workers=args.workers) as ex:
         futures = {}
         for h in targets:
@@ -323,23 +334,34 @@ def main(argv: list[str] | None = None) -> int:
             futures[ex.submit(probe_one, h, args.path, args.timeout,
                               not args.no_http, args.verify, args.ws,
                               args.grpc)] = h
+        done = 0
         for fut in cf.as_completed(futures):
             r = fut.result()
             results.append(r)
+            done += 1
+            if show_progress:
+                # live "12/87 hostname" counter on stderr; cleared at the end
+                sys.stderr.write(f"\r[{done}/{total}] {futures[fut]}")
+                sys.stderr.flush()
             # adaptive backoff: 429/503 doubles the domain delay, success resets
             code = _http_status_code(r)
             if code in (429, 503):
                 throttle.bump(futures[fut])
             elif code is not None:
                 throttle.reset(futures[fut])
+    if show_progress:
+        sys.stderr.write("\r\033[K")  # clear the progress line
+        sys.stderr.flush()
     results.sort(key=lambda r: r["hostport"])
 
     if not args.quiet:
         print(BANNER)
         print(f"  {_TAGLINE}   v{__version__}")
         print()
+        print(fmt_summary_table(results))
+        print()
         for r in results:
-            print(fmt_block(r))
+            print(fmt_block(r) if args.verbose else fmt_compact_block(r))
             print()
 
     if args.json:

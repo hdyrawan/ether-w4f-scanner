@@ -23,6 +23,8 @@ _BRIGHT_CYAN = "\033[96m"
 _BRIGHT_BLUE = "\033[94m"
 _BRIGHT_MAGENTA = "\033[95m"
 _BRIGHT_RED = "\033[91m"
+_BOLD = "\033[1m"
+_CRIT = "\033[1;91m"  # bold bright red — aggressive for mTLS/block/error flags
 _DIM = "\033[2m"
 _RESET = "\033[0m"
 
@@ -127,17 +129,22 @@ def fmt_verdict(verdict: list[dict]) -> str:
 
 
 def _verdict_line(ver: list[dict]) -> str:
-    """Color vendor names per-vendor (a glance names the edge); plain otherwise."""
+    """Smarter verdict formatting: the primary vendor on its own highlighted
+    line; secondary vendors (origin layers) dimmed underneath."""
     if not ver:
         return _row("verdict", _wrap("no signature matched (unknown edge)", _DIM))
-    parts = []
-    for m in ver:
+    lines = []
+    for i, m in enumerate(ver):
         ev = "; ".join(m["evidence"])
         color = _vendor_color(m["vendor"])
-        name = _wrap(m["vendor"], color) if color else m["vendor"]
         counts = _wrap(f"({m['signals']}, {m.get('confidence', 0)}%)", _DIM)
-        parts.append(f"{name} {counts}: {ev}")
-    return _row("verdict", "  |  ".join(parts))
+        if i == 0:
+            name = _wrap(m["vendor"], _BOLD + color) if color else _wrap(m["vendor"], _BOLD)
+            lines.append(_row("verdict", f"{name} {counts}: {ev}"))
+        else:
+            name = _wrap(m["vendor"], _DIM)
+            lines.append(_row("       ", f"{name} {counts}: {ev}"))
+    return "\n".join(lines)
 
 
 def fmt_block(r: dict) -> str:
@@ -233,6 +240,94 @@ def fmt_block(r: dict) -> str:
                 f" [{blk.get('confidence', 95)}% conf]",
                 _YELLOW))
         )
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Triage view (default): summary table + compact per-host blocks.
+# ---------------------------------------------------------------------------
+
+
+def _flags(r: dict) -> list[str]:
+    """Critical flags: mTLS / BLOCK / ERR, styled aggressively."""
+    flags = []
+    tls = r.get("tls") or {}
+    if tls.get("mtls"):
+        flags.append(_wrap("mTLS", _CRIT))
+    if r.get("block"):
+        blk = r["block"]
+        flags.append(_wrap(f"BLOCK {blk.get('vendor', '')}".rstrip(), _CRIT))
+    if r.get("error"):
+        flags.append(_wrap("ERR", _CRIT))
+    return flags
+
+
+def fmt_summary_table(results: list[dict]) -> str:
+    """Compact all-hosts table: Host | Edge | Conf | mTLS | Block | Err.
+
+    Plain aligned text (no markdown); the edge is colored per-vendor and
+    critical flags are bold red so a 20-50 host run scans in one glance.
+    """
+    if not results:
+        return ""
+    plain = []  # (host, edge, conf, mtls, block, err) — plain for width math
+    for r in results:
+        ver = r.get("verdict") or []
+        if ver:
+            edge = ver[0]["vendor"]
+            conf = f"{ver[0].get('confidence', 0)}%"
+        else:
+            edge = "unknown"
+            conf = "-"
+        tls = r.get("tls") or {}
+        err = r.get("error") or "-"
+        if len(err) > 36:
+            err = err[:33] + "..."
+        plain.append((r["hostport"], edge, conf,
+                      "YES" if tls.get("mtls") else "-",
+                      "BLOCK" if r.get("block") else "-",
+                      err))
+    hw = max(len(p[0]) for p in plain)
+    ew = max(len(p[1]) for p in plain)
+    header = (f"{'HOST':<{hw}}  {'EDGE':<{ew}}  {'CONF':>5}  "
+              f"mTLS  BLOCK  ERR")
+    rows = [header]
+    for r, (host, edge, conf, mtls, blk, err) in zip(results, plain):
+        ver = r.get("verdict") or []
+        edge_color = _vendor_color(ver[0]["vendor"]) if ver else _DIM
+        host_cell = _wrap(host.ljust(hw), _CYAN)
+        edge_cell = _wrap(edge.ljust(ew), edge_color) if edge_color else edge.ljust(ew)
+        mtls_cell = _wrap(mtls.ljust(4), _CRIT) if mtls != "-" else mtls.ljust(4)
+        blk_cell = _wrap(blk.ljust(5), _CRIT) if blk != "-" else blk.ljust(5)
+        err_cell = _wrap(err, _CRIT) if err != "-" else err
+        rows.append(f"{host_cell}  {edge_cell}  {conf:>5}  "
+                    f"{mtls_cell}  {blk_cell}  {err_cell}")
+    return "\n".join(rows)
+
+
+def fmt_compact_block(r: dict) -> str:
+    """Triage view per host: host + critical flags + verdict (primary
+    highlighted, secondary/origin vendors dimmed). No cert/headers detail —
+    that lives behind --verbose (fmt_block)."""
+    head = _wrap(r["hostport"], _CYAN)
+    flags = _flags(r)
+    if flags:
+        head += "  " + "  ".join(flags)
+    lines = [head]
+    ver = r.get("verdict") or []
+    if ver:
+        for i, m in enumerate(ver):
+            counts = _wrap(f"({m['signals']}, {m.get('confidence', 0)}%)", _DIM)
+            color = _vendor_color(m["vendor"])
+            if i == 0:
+                name = _wrap(m["vendor"], _BOLD + color) if color else _wrap(m["vendor"], _BOLD)
+            else:
+                name = _wrap(m["vendor"], _DIM)
+            lines.append(f"    {name} {counts}")
+    else:
+        lines.append(_row("    ", _wrap("no signature matched (unknown edge)", _DIM)))
+    if r.get("error"):
+        lines.append(_row("    ", _wrap(r["error"][:100], _CRIT)))
     return "\n".join(lines)
 
 

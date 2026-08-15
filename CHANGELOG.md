@@ -5,6 +5,30 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.31] — 2026-08-15
+
+Console UX overhaul (user review) — the daily-driver output is now a triage
+view instead of a dense wall of per-host blocks.
+
+- **Summary table first.** After the banner, every host gets one row:
+  `HOST | EDGE | CONF | mTLS | BLOCK | ERR`. Edge is colored per-vendor;
+  critical flags are bold bright red. A 20-50 host sweep now scans in one
+  glance.
+- **Progressive detail.** Default mode prints the table + a compact block
+  per host (host + critical flags + verdict only). `-v` / `--verbose`
+  restores the FULL detail (IPs, cert, SPKI pin, response headers, verdict
+  evidence). `--quiet` now suppresses ALL console output (banner, table,
+  blocks) for automation.
+- **Smarter verdict formatting.** The primary (highest-signal) vendor is on
+  its own highlighted line; secondary/origin vendors are dimmed underneath
+  (both in the triage view and in `--verbose`).
+- **Progress indicator.** Multi-host runs show a live `[12/87] hostname`
+  counter on stderr, cleared when done (no more blank screen during a sweep).
+- **Aggressive critical flags.** mTLS / BLOCK / ERR are bold bright red
+  (`\033[1;91m`), distinct from the vendor colors.
+- +10 tests (263 total): summary table shape/flags/no-markdown, compact
+  block flags, multi-vendor verdict-line layout, plain-when-piped.
+
 ## [0.1.30] — 2026-08-15
 
 Second sweep batch from the continuous harness (`~/sec/w4f-sweep`, hourly

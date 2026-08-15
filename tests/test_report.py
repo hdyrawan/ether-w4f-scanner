@@ -34,7 +34,7 @@ def _result_with_verdict():
         "cert": {"issuer_org": "Example CA", "spki_sha256": "a" * 64},
         "mtls": False,
         "chain_verified": True,
-        "verdict": [{"vendor": "cloudflare", "signals": 3,
+        "verdict": [{"vendor": "cloudflare", "signals": 3, "confidence": 82,
                      "evidence": ["header server: cloudflare", "header cf-ray: abc",
                                   "cname: api.example.com.cdn.cloudflare.net"]}],
     }
@@ -97,6 +97,90 @@ class TestVendorColors:
                                "confidence": 82, "evidence": []}])
         assert "\033[" not in line
         assert "cloudflare (3, 82%)" in line
+
+    def test_verdict_line_primary_own_line_secondaries_dimmed(self):
+        # the triage format: primary vendor on the "verdict" row, secondary
+        # vendors on continuation rows
+        from w4f.report import _verdict_line
+        ver = [{"vendor": "imperva", "signals": 2, "confidence": 60,
+                "evidence": ["x-iinfo"]},
+               {"vendor": "nginx", "signals": 1, "confidence": 7,
+                "evidence": ["header server: nginx"]}]
+        out = _verdict_line(ver)
+        lines = out.splitlines()
+        assert lines[0].startswith("verdict")
+        assert "imperva (2, 60%)" in lines[0]
+        assert lines[1].startswith("       ")  # continuation, aligned
+        assert "nginx (1, 7%)" in lines[1]
+
+
+class TestSummaryTable:
+    def _results(self):
+        r1 = _result_with_verdict()
+        r2 = _result_with_verdict()
+        r2["host"] = r2["hostport"] = "bank.example.net:443"
+        r2["verdict"] = [{"vendor": "imperva", "signals": 2, "confidence": 60,
+                          "evidence": ["x-iinfo"]}]
+        r2["tls"]["mtls"] = True
+        r3 = {"host": "dead.example.io", "hostport": "dead.example.io:443",
+              "error": "DNS did not resolve", "tls": {}, "verdict": []}
+        return [r1, r2, r3]
+
+    def test_header_and_rows(self):
+        from w4f.report import fmt_summary_table
+        out = fmt_summary_table(self._results())
+        assert "HOST" in out and "EDGE" in out and "CONF" in out
+        assert "mTLS" in out and "BLOCK" in out and "ERR" in out
+        assert "cloudflare" in out and "imperva" in out and "unknown" in out
+        assert "DNS did not resolve" in out
+
+    def test_critical_flags_present(self):
+        from w4f.report import fmt_summary_table
+        out = fmt_summary_table(self._results())
+        assert "YES" in out          # mTLS flag for the imperva host
+        assert "DNS did not resolve" in out  # error column shows the reason
+
+    def test_no_markdown(self):
+        from w4f.report import fmt_summary_table
+        out = fmt_summary_table(self._results())
+        assert "**" not in out
+        assert not out.lstrip().startswith("|")
+
+    def test_plain_when_not_tty(self):
+        from w4f.report import fmt_summary_table
+        assert "\033[" not in fmt_summary_table(self._results())
+
+    def test_empty(self):
+        from w4f.report import fmt_summary_table
+        assert fmt_summary_table([]) == ""
+
+
+class TestCompactBlock:
+    def test_host_and_verdict(self):
+        from w4f.report import fmt_compact_block
+        out = fmt_compact_block(_result_with_verdict())
+        assert "api.example.com:443" in out
+        assert "cloudflare" in out
+        assert "(3, 82%)" in out
+
+    def test_critical_flags(self):
+        from w4f.report import fmt_compact_block
+        r = _result_with_verdict()
+        r["tls"]["mtls"] = True
+        r["block"] = {"vendor": "fortiweb", "title": "blocked", "status": "500"}
+        out = fmt_compact_block(r)
+        assert "mTLS" in out
+        assert "BLOCK fortiweb" in out
+
+    def test_error_host(self):
+        from w4f.report import fmt_compact_block
+        out = fmt_compact_block({"hostport": "x.com:443", "error": "DNS did not resolve"})
+        assert "ERR" in out
+        assert "DNS did not resolve" in out
+
+    def test_no_markdown(self):
+        from w4f.report import fmt_compact_block
+        assert "**" not in fmt_compact_block(_result_with_verdict())
 
 
 class TestMdDoc:

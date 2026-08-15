@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.30
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.31
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -227,12 +227,13 @@ w4f --target api.example.com --no-http
 | `--md FILE` | write a markdown sweep (table + per-host blocks) to FILE |
 | `--csv FILE` | write a flat CSV — one row per host, primary verdict: host, port, ips, cname, verdict, confidence, signals, mtls, tls_version, alpn, spki, http_status, block, error |
 | `--sarif FILE` | write a SARIF 2.1.0 report for security dashboards / GitHub Code Scanning — one result per host, rule ids `w4f/<vendor>`, `w4f/block`, `w4f/mtls`, `w4f/probe-error`, `w4f/unknown-edge` |
+| `-v`, `--verbose` | show the FULL per-host detail (cert, SPKI, response headers, verdict evidence) instead of the compact triage view — the summary table prints either way |
 | `--no-http` | TLS/cert/DNS only, skip the HTTP request |
 | `--ws PATH` | **OPT-IN** — send an RFC 6455 WebSocket upgrade request to this path and report whether the edge answers `101` (plus `Sec-WebSocket-Accept`) |
 | `--grpc` | **OPT-IN** — send a `grpc.health.v1.Health/Check` request and report `grpc-status` / `grpc-message`, or the HTTP/2 binary-framing answer (real gRPC is h2; pairs with the ALPN observation) |
 | `--verify` | **OPT-IN active probe** — one benign `<script>` query per host; reports the WAF block page (FortiWeb / F5 ASM / Cloudflare / Imperva) |
 | `--version` | print version and exit |
-| `--quiet` | suppress the console banner and per-host blocks (for `--json`/`--md`) |
+| `--quiet` | suppress ALL console output (banner, summary table, per-host blocks) — use with `--json`/`--md`/`--csv` for automation |
 
 Targets may come from `--target`, `--target-json`, `--target-file`,
 `--target-csv`, or — when none of those is given and stdin is not a TTY —
@@ -262,20 +263,35 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.30
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.31
 
-api.example.com:443
-ip        45.60.16.239
-cname     api.example.com.impervadns.net
-tls       TLSv1.3  TLS_AES_128_GCM_SHA256  ALPN h2
-mtls      server wants a CLIENT certificate
-cert      Example Security CA
-  san     api.example.com, www.api.example.com
-  valid   2025-12-02 -> 2026-12-27  (134d left)
-  spki    6905ab38dc27d7d6562fdbfd26cedf1238783b1ef25c76fd47245a695b3b11df
-  key     RSA 2048  sha256WithRSAEncryption
-http      ERROR: [SSL: TLSV13_ALERT_CERTIFICATE_REQUIRED] tlsv13 alert certificate required
-verdict   imperva (2, 45%): cname: api.example.com.impervadns.net; netblock: 45.60.16.239 in 45.60.0.0/16
+HOST                  EDGE       CONF  mTLS  BLOCK  ERR
+api.example.com:443   imperva     45%  YES   -      -
+shop.example.net:443  cloudflare 65%  -     -      -
+dead.example.io:443   unknown      -   -     -      DNS did not resolve
+
+api.example.com:443   mTLS
+    imperva (2, 45%)
+    nginx (1, 7%)
+
+shop.example.net:443
+    cloudflare (7, 65%)
+    nginx (1, 7%)
+
+dead.example.io:443   ERR
+    no signature matched (unknown edge)
+    DNS did not resolve
+```
+
+Default mode is the **triage view**: a summary table of every host, then a
+compact block per host (host + critical flags + verdict). Add `-v` /
+`--verbose` for the FULL per-host detail (IPs, cert, SPKI pin, response
+headers, verdict evidence):
+
+```
+$ w4f -v --target shop.example.net:443
+HOST                  EDGE       CONF  mTLS  BLOCK  ERR
+shop.example.net:443  cloudflare 65%  -     -      -
 
 shop.example.net:443
 ip        104.18.1.79, 104.18.0.79, 2606:4700::6812:4f, 2606:4700::6812:14f
@@ -297,19 +313,20 @@ verdict   cloudflare (7, 65%): header server: cloudflare; header cf-ray: ...;
 ```
 
 (The hosts above are illustrative — run it against any real host to see your
-own output.)
+own output. The full-block example is what `--verbose` shows; the triage
+view above is the default.)
 
 Colors are enabled automatically when stdout is a TTY (piped output is plain
-text), and disabled with `NO_COLOR`. The host line is cyan, mTLS/errors red,
-`--verify` block findings yellow — and each **vendor name has its own color**
-so a glance names the edge: Cloudflare bright-yellow, Akamai blue, Fastly
-red, AWS family cyan, Azure family bright-blue, Tencent family
-bright-magenta, Google GFE magenta, F5/netscaler bright-red, FortiWeb
-bright-yellow, Kong bright-cyan, and plain origin stacks (nginx, Apache,
-IIS, Varnish, …) are **dimmed** so the edge vs origin distinction is
-instantly visible. The color map is in `w4f/report.py` (`VENDOR_COLORS`) —
-a new vendor gets a green default; add an entry there if it deserves its
-own hue.
+text), and disabled with `NO_COLOR`. The host line is cyan, **critical flags
+(mTLS / BLOCK / ERR) are bold bright red**, `--verify` block findings
+yellow — and each **vendor name has its own color** so a glance names the
+edge: Cloudflare bright-yellow, Akamai blue, Fastly red, AWS family cyan,
+Azure family bright-blue, Tencent family bright-magenta, Google GFE
+magenta, F5/netscaler bright-red, FortiWeb bright-yellow, Kong bright-cyan,
+and plain origin stacks (nginx, Apache, IIS, Varnish, …) are **dimmed** so
+the edge vs origin distinction is instantly visible. The color map is in
+`w4f/report.py` (`VENDOR_COLORS`) — a new vendor gets a green default; add
+an entry there if it deserves its own hue.
 
 ## What it reports
 
