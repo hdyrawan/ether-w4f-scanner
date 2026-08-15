@@ -93,6 +93,16 @@ and only reveal themselves when they block something. Off by default.
 
 ## Why this exists
 
+w4f is an **evidence-based edge attribution** tool: it does not guess a
+vendor name, it collects observations (DNS, certificate, CNAME/PTR, IP
+ownership, HTTP, cookies) and reports what those observations can
+defensibly support. Every host ends in exactly one of five states —
+`ATTRIBUTED` (a vendor is named, with the evidence basis), `AMBIGUOUS`
+(genuinely strong competing edges), `UNKNOWN` (nothing defensible —
+preferred over a confident guess), `INTERCEPTED` (a box on the scanner's
+own path), or `ERROR` (classified by `error_class`). The core principle:
+**a correct UNKNOWN beats an incorrect high-confidence attribution.**
+
 Knowing what edge sits in front of a host decides which interception route can
 work at all:
 
@@ -184,7 +194,7 @@ python3 -m pytest           # run the test suite
 ### Verify & uninstall
 
 ```bash
-w4f --version        # e.g. "w4f 0.1.36 — passive TLS / CDN / WAF / edge fingerprinting"
+w4f --version        # e.g. "w4f 0.1.43 — passive TLS / CDN / WAF / edge fingerprinting"
 w4f --help           # full usage
 pipx uninstall w4f   # or: uv tool uninstall w4f / pip uninstall w4f
 ```
@@ -202,6 +212,14 @@ top = r["verdict"][0]                         # ranked by confidence
 print(top["vendor"], top["confidence"])       # cloudflare 82
 print(top["categories"])                      # ['netblock', 'cert', 'cname', 'headers']
 print(r["block"]["vendor"] if r["block"] else "no WAF block")    # needs verify=True
+
+att = r["attribution"]                        # the interpretation layer
+print(att["state"])                           # ATTRIBUTED | AMBIGUOUS | UNKNOWN | INTERCEPTED | ERROR
+print(att["vendor"], att["score"], att["confidence"])   # cloudflare 82 HIGH
+print(att["basis"])                           # ['net', 'cert', 'cname', 'http']
+print([a["vendor"] for a in att["alternatives"]])   # competing EDGE candidates
+print([l["vendor"] for l in att["layers"]])         # origins under the edge
+print(r["error_class"])                       # None, or dns-noanswer / tcp-timeout / ...
 ```
 
 `verdict` is ranked by **confidence**, so `verdict[0]` is the best-evidenced
@@ -209,11 +227,19 @@ vendor. `categories` (added 0.1.32) lists the signal kinds behind the score,
 strongest first — a verdict whose categories are only `headers`/`cookies`
 rests on strings the origin can set.
 
+`attribution` (added 0.1.35, refined 0.1.36/0.1.42) is the interpretation:
+`state` (ATTRIBUTED / AMBIGUOUS / UNKNOWN / INTERCEPTED / ERROR), the
+primary `vendor`, `score` + `confidence` band, `basis` (signal categories),
+`alternatives` (weaker competing edges), `layers` (origins under the edge),
+and grouped `evidence` — one category per heading, one observation per line.
+
 Returns the same per-host dict the CLI's `--json` output contains (`host`,
-`hostport`, `port`, `resolved`, `tls`, `verdict`, `block`, `error`). Accepts
+`hostport`, `port`, `resolved`, `tls`, `verdict`, `block`, `error`,
+`error_class`, `attribution`). Accepts
 `port`, `timeout`, `path`, `no_http`, `verify`, `ws_path`, `grpc` — the CLI
 flag equivalents. Errors are a field, never an exception: a host that fails
-DNS comes back with `error` set and `verdict == []`.
+DNS comes back with `error` set, `error_class` = `dns-*`, and
+`verdict == []`.
 
 ## Usage
 
@@ -324,7 +350,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.39
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.43
 
 HOST                    EDGE         CONF     BASIS               TLS     CERT                 HTTP  NOTES
 dead.example.io:443     -            -                            -       -                       -  ERR DNS did not resolve
@@ -366,11 +392,11 @@ several very different causes and collapsing them loses the decision:
 
 | state | meaning |
 |---|---|
-| `ATTRIBUTED` (named vendor) | one candidate is best-evidenced; the vendor is named |
-| `AMBIGUOUS` | edge candidates too close to separate — both are shown, rather than silently picking the higher |
-| `UNKNOWN` | scanned, nothing matched. The observations/leads are the start of the next signature |
+| `ATTRIBUTED` (named vendor) | one candidate is best-evidenced; the vendor is named. A LOW-confidence attribution is still a claim — read the BASIS before trusting it |
+| `AMBIGUOUS` | two or more edge candidates are **genuinely strong and close** (both ≥ 30, within 8 points) — both are shown, rather than silently picking the higher |
+| `UNKNOWN` | scanned, nothing matched — **or** every candidate is weak and too close to separate (the close-call rule below). The observations/leads are the start of the next signature |
 | `INTERCEPTED` | something on the **scanner's** path re-signed the connection; no vendor is attributed and the cert/pin may be the middlebox's |
-| `ERROR` | the host could not be probed. A host that failed *but* resolved a vendor CNAME still reports that vendor — DNS resolves before the handshake |
+| `ERROR` | the host could not be probed, classified by `error_class`. A host that failed *but* resolved a vendor CNAME still reports that vendor — DNS resolves before the handshake |
 
 `layer` is the stack, not a rival: an origin underneath the edge
 (`cloudflare → varnish`) is reported as a **layer**, while `alt` lists only
@@ -384,6 +410,24 @@ more than the strongest single category can supply alone. `BASIS` names
 those categories (`net` netblock, `cert`, `cname`, `ptr`, `hdr` header,
 `cookie`); a bare `hdr` is a string the origin can set, and the block marks
 it *headers only — spoofable*.
+
+**Weak evidence stays weak.** `net` (30) is hard to spoof; `hdr` (7) and
+`cookie` (3) are strings anyone can set, and each category counts once — six
+matching headers still score 7 while one netblock scores 30. Two rules keep
+weak evidence from manufacturing certainty:
+
+- **The close-call rule:** when the top edge candidate scores below 30 and
+  the second edge is within 8 points, the result is `UNKNOWN` — not
+  `ATTRIBUTED` to whichever weak candidate happened to score a few points
+  higher (e.g. an AWS Global Accelerator PTR against a Cloudflare header:
+  both real, both weak, neither defensible as *the* edge).
+- **Layers never compete:** an origin under the edge (`cloudflare →
+  varnish`) is a `layer`, not a rival — so a strong edge plus an unrelated
+  origin tech stays one clear winner, and only genuinely strong competing
+  edges reach `AMBIGUOUS`.
+
+A correct `UNKNOWN` is deliberately preferred over an incorrect
+high-confidence attribution.
 
 The full model is documented in
 [`docs/attribution-model.md`](docs/attribution-model.md).
@@ -474,7 +518,8 @@ an entry there if it deserves its own hue.
 | redirect chain + final host (apex → www) | one GET, up to 5 hops |
 | CDN/WAF verdict + evidence + confidence + signal categories + cloud/on-prem | signature match |
 | `interception` — a TLS-inspection box on the scanner's own path | cert issuer / its refusal page |
-| `block` — WAF block page (vendor, title, status) | `--verify` active probe |
+| `block` — WAF block page (vendor, title, status, `source: passive` or `verify`) | passive refusal / `--verify` probe |
+| `error_class` — structured failure category | probe error message |
 
 ## Reading a verdict
 
@@ -522,8 +567,13 @@ and the "why" behind each signal.
 - **A passive "direct nginx" verdict is NOT proof of a bare origin.** FortiWeb
   and F5 ASM serve plain nginx to normal requests; run `--verify` before
   concluding the origin is exposed.
-- **`--verify` findings** are reported separately (`block fortiweb — ...`)
-  so the passive and active layers never blur.
+- **Passive and verification evidence never blur.** Every block result
+  carries a `source` — `passive` (a refusal page the edge handed us on the
+  normal GET) or `verify` (a page our one-query probe provoked). A verified
+  WAF finding is reported as `block ... (source=verify)`, never silently
+  counted as passive detection. AWS WAF behind CloudFront is the canonical
+  silent case: the passive scan says CloudFront, and only `--verify` sees
+  the WAF block page.
 
 ## Security notes
 
@@ -634,6 +684,32 @@ errors are a field, not an exception — a bad host never aborts the run:
 `verdict` is ordered by confidence (best-evidenced first). `categories` is
 strongest-first and is what the console renders as `BASIS`.
 
+When a host fails, the readable `error` string is unchanged and a structured
+`error_class` is added so scripts can distinguish causes without parsing
+free text:
+
+| error_class | means |
+|---|---|
+| `dns-nxdomain` | the name does not exist |
+| `dns-noanswer` | the name exists but has no A/AAAA record (e.g. an apex whose site lives at `www.`) |
+| `dns-timeout` / `dns-nonameserver` | resolver failure |
+| `conn-refused` | TCP connection refused |
+| `tcp-timeout` | TCP connect timed out |
+| `network-unreachable` | no route to the host (often geo-blocked / private routing) |
+| `tls-timeout` | TLS handshake timed out |
+| `tls-handshake` | TLS version / alert failure |
+| `cert` | certificate failure (e.g. legacy TLS renegotiation) |
+| `http-timeout` | the GET timed out |
+| `redirect` | redirect loop / too many hops |
+| `http-protocol` / `upstream` | malformed response / connection reset |
+| `other` | anything else |
+
+HTTP-layer failures (timeout, protocol, redirect loop) are promoted to the
+error contract — a failed GET is as visible as a failed handshake. An mTLS
+`certificate required` alert is NOT an error: it is the `mtls` finding.
+DNS/CNAME/netblock evidence survives the error — a host that fails the
+handshake but resolved a vendor CNAME still reports that vendor.
+
 ### Scripting
 
 ```bash
@@ -676,7 +752,7 @@ pip install .[dev]
 python -m pytest
 ```
 
-287 tests, offline — a local TLS server with a self-signed cert exercises the
+469 tests, offline — a local TLS server with a self-signed cert exercises the
 real socket path without touching the internet. Coverage: fingerprint
 matching against real-world cases from live sweep corpora + false-positive
 guards (requires-gate positives/negatives, Cloudflare-WAF low-confidence,
