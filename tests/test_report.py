@@ -232,6 +232,32 @@ class TestCompactBlock:
         assert "chain verified" in out
         assert "spki aaaa" in out                      # pin (truncated)
 
+    def test_san_shown_in_triage_view(self):
+        # the cert's scope (sibling hosts, wildcard reach) is triage material,
+        # not verbose-only detail
+        from w4f.report import fmt_compact_block
+        r = _result_with_verdict()
+        r["tls"]["cert"]["san"] = "api.example.com, www.api.example.com"
+        out = fmt_compact_block(r)
+        assert "san" in out
+        assert "api.example.com, www.api.example.com" in out
+
+    def test_san_capped_tighter_than_verbose(self):
+        from w4f.report import fmt_block, fmt_compact_block
+        r = _result_with_verdict()
+        r["tls"]["cert"]["san"] = ", ".join(f"h{i}.example.com" for i in range(9))
+        compact = fmt_compact_block(r)
+        assert "h0.example.com, h1.example.com, h2.example.com" in compact
+        assert "(+6 more)" in compact       # 3 shown in the triage block
+        assert "h3.example.com" not in compact
+        assert "(+3 more)" in fmt_block(r)  # 6 shown under --verbose
+
+    def test_no_san_row_when_cert_has_none(self):
+        from w4f.report import fmt_compact_block
+        r = _result_with_verdict()
+        r["tls"]["cert"].pop("san", None)
+        assert "\n  san" not in fmt_compact_block(r)
+
     def test_stack_lists_secondary_vendors(self):
         from w4f.report import fmt_compact_block
         out = fmt_compact_block(_results_fixture()[1])

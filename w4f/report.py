@@ -222,11 +222,7 @@ def fmt_block(r: dict) -> str:
         lines.append(_row("cert", issuer))
         # a wildcard cert can carry 50+ SANs — that one line used to bury the
         # whole block; the full list stays in --json
-        sans = [s.strip() for s in (cert.get("san") or "").split(",") if s.strip()]
-        san_line = ", ".join(sans[:6]) if sans else "-"
-        if len(sans) > 6:
-            san_line += f"  (+{len(sans) - 6} more)"
-        lines.append(_row("  san", san_line))
+        lines.append(_row("  san", _san_summary(cert, limit=6) or "-"))
     if cert.get("days_remaining") is not None:
         lines.append(
             _row(
@@ -377,6 +373,21 @@ def _tls_cell(r: dict) -> str:
     if not ver:
         return "-"
     return f"{ver} {tls.get('alpn') or ''}".strip()
+
+
+def _san_summary(cert: dict, limit: int) -> str:
+    """First `limit` SAN entries + a "+N more" tail; "" when the cert has none.
+
+    A wildcard cert can carry 50+ SANs, which is why both views cap it — the
+    triage block tighter than --verbose.
+    """
+    sans = [s.strip() for s in str(cert.get("san") or "").split(",") if s.strip()]
+    if not sans:
+        return ""
+    out = ", ".join(sans[:limit])
+    if len(sans) > limit:
+        out += f"  (+{len(sans) - limit} more)"
+    return out
 
 
 def _cert_cell(r: dict) -> str:
@@ -605,6 +616,13 @@ def fmt_compact_block(r: dict) -> str:
         cert_bits.append("chain NOT verified")
     if cert_bits:
         lines.append(_row2("cert", " · ".join(cert_bits)))
+    # SAN in the triage view, not just --verbose: the cert's scope is where
+    # sibling hostnames and wildcard reach show up, which is exactly what a
+    # sweep is looking for. Capped tighter than --verbose (a wildcard cert
+    # can carry 50+) so the block stays one screen per host.
+    san_line = _san_summary(cert, limit=3)
+    if san_line:
+        lines.append(_row2("san", san_line))
     if cert.get("spki_sha256"):
         lines.append(_row2("pin", _wrap(f"spki {cert['spki_sha256'][:16]}…", _DIM)))
     return "\n".join(lines)

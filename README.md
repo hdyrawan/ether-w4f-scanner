@@ -300,6 +300,7 @@ api.example.com:443  mTLS  BLOCK imperva
   stack   nginx  7%  hdr
   path    403 · TLS1.3 h2
   cert    Imperva Inc · 64d left · chain verified
+  san     api.example.com
   pin     spki 343d1536f3666f92…
 
 shop.example.net:443  ->www.shop.example.net
@@ -307,6 +308,7 @@ shop.example.net:443  ->www.shop.example.net
           header server: cloudflare · header cf-ray: 9a2b4f55b2f67d43-SIN · cname: shop.example.net.cdn.cloudflare.net · +1 more
   path    -> www.shop.example.net (1 hop) · 200 · TLS1.3 h2
   cert    SSL Corporation · 73d left · chain verified
+  san     shop.example.net, www.shop.example.net, *.cdn.example.net  (+1 more)
   pin     spki 0856752f53199a67…
 
 origin.example.org:443
@@ -314,6 +316,7 @@ origin.example.org:443
           header server: nginx
   path    200 · TLS1.3 h2
   cert    Let's Encrypt · 21d left · chain verified
+  san     origin.example.org
   pin     spki 9c11885c885a00ab…
 
 edge.example.io:443
@@ -321,6 +324,7 @@ edge.example.io:443
   leads   server: acme-edge · x-acme-pop: sin1 · x-acme-request-id
   path    200 · TLS1.3 h2
   cert    GlobalSign nv-sa · 161d left · chain verified
+  san     edge.example.io
   pin     spki a7adf62a1443f271…
 
 dead.example.io:443  ERR DNS did not resolve
@@ -359,7 +363,7 @@ ip        104.18.1.79
 cname     shop.example.net.cdn.cloudflare.net
 tls       TLSv1.3  TLS_AES_256_GCM_SHA384  ALPN h2
 cert      SSL Corporation  (chain verified)
-  san     shop.example.net, www.shop.example.net
+  san     shop.example.net, www.shop.example.net, *.cdn.example.net, assets.example.net
   valid   2026-06-05 -> 2026-12-11  (73d left)
   spki    0856752f53199a67bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   key     RSA 2048  sha256WithRSAEncryption
