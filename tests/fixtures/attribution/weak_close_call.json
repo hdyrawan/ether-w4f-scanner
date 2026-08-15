@@ -1,0 +1,43 @@
+{
+  "observations": {
+    "host": "cdn.example.eu",
+    "hostport": "cdn.example.eu:443",
+    "port": 443,
+    "ips": ["198.51.100.9"],
+    "cname": [],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Example CA",
+      "subject": "CN=cdn.example.eu",
+      "spki_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "days_remaining": 75
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Example CA",
+        "subject": "CN=cdn.example.eu",
+        "spki_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "days_remaining": 75
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "myracloud",
+          "x-cdn-provider": "WEDOS Global CDN (WEDOS.delivery)"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "cdn.example.eu"
+      }
+    }
+  },
+  "expected": {
+    "state": "UNKNOWN",
+    "note": "two genuinely close weak candidates (myra server token vs WEDOS provider header, both header-only) — no strong evidence, no defensible winner"
+  }
+}

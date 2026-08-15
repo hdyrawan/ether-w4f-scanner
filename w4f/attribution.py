@@ -234,6 +234,22 @@ def attribute(result: dict) -> dict:
             cand["evidence"] = evidence_for(by_vendor.get(cand["vendor"], {}))
         return attribution
 
+    # HARDENING (v0.1.42): all edge candidates weak AND too close to
+    # separate below the ambiguity floor -> UNKNOWN. Without this a
+    # low-score close call (network PTR vs HTTP header, e.g.) silently
+    # became ATTRIBUTED to whichever weak candidate happened to score a
+    # few points higher — a confident answer built on near-tied weak
+    # evidence. A correct UNKNOWN beats that.
+    if (len(edges) >= 2
+            and edges[0]["score"] < AMBIGUITY_FLOOR
+            and edges[0]["score"] - edges[1]["score"] <= AMBIGUITY_MARGIN):
+        attribution["state"] = STATE_UNKNOWN
+        attribution["candidates"] = edges
+        by_vendor = {m.get("vendor"): m for m in verdict}
+        for cand in edges:
+            cand["evidence"] = evidence_for(by_vendor.get(cand["vendor"], {}))
+        return attribution
+
     attribution["state"] = STATE_ATTRIBUTED
     attribution["vendor"] = primary["vendor"]
     attribution["score"] = primary["score"]

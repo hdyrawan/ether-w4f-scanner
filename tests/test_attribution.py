@@ -150,11 +150,21 @@ class TestAmbiguous:
         assert att["state"] == ATT.STATE_ATTRIBUTED
         assert att["vendor"] == "cloudflare"
 
-    def test_two_weak_candidates_are_not_ambiguous(self):
-        # below the floor there is nothing worth calling a tie
+    def test_two_weak_close_candidates_are_unknown(self):
+        # below the floor there is nothing worth calling a tie — but a
+        # near-tied pair of weak candidates is not a defensible ATTRIBUTED
+        # either; the honest answer is UNKNOWN (v0.1.42 hardening)
         att = attribute(_result([_match("kong", 7, ["headers"]),
                                  _match("tyk", 7, ["headers"])]))
+        assert att["state"] == ATT.STATE_UNKNOWN
+
+    def test_two_weak_candidates_wide_gap_is_low_attribution(self):
+        # one weak candidate clearly better than the other -> LOW, not UNKNOWN
+        att = attribute(_result([_match("kong", 22, ["cname"]),
+                                 _match("tyk", 7, ["headers"])]))
         assert att["state"] == ATT.STATE_ATTRIBUTED
+        assert att["vendor"] == "kong"
+        assert att["confidence"] == ATT.LOW
 
     def test_edge_plus_origin_at_similar_scores_is_not_ambiguous(self):
         # an origin is a layer, not a competing claim about the edge
@@ -417,3 +427,62 @@ def test_no_trailing_whitespace_in_blocks():
             assert line == line.rstrip(), f"trailing whitespace: {line!r}"
         for line in fmt_block(r).splitlines():
             assert line == line.rstrip(), f"trailing whitespace (verbose): {line!r}"
+
+
+class TestEvidenceConflicts:
+    """Strong evidence must never be overridden by weak generic evidence
+    (v0.1.42 hardening; the v0.1.41 financial validation collision cases)."""
+
+    def test_strong_network_beats_weak_header(self):
+        # vendor A netblock (30) vs vendor B header (7): A wins decisively
+        att = attribute(_result([_match("cloudflare", 30, ["netblock"]),
+                                 _match("myra", 7, ["headers"])]))
+        assert att["state"] == ATT.STATE_ATTRIBUTED
+        assert att["vendor"] == "cloudflare"
+        assert att["confidence"] == ATT.MEDIUM
+
+    def test_strong_cname_beats_generic_origin_server(self):
+        # A cname (20) vs a generic origin server: the origin is a LAYER
+        att = attribute(_result([_match("akamai", 20, ["cname"]),
+                                 _match("apache", 7, ["headers"], "origin")]))
+        assert att["state"] == ATT.STATE_ATTRIBUTED
+        assert att["vendor"] == "akamai"
+        assert [l["vendor"] for l in att["layers"]] == ["apache"]
+
+    def test_certificate_beats_generic_http_marker(self):
+        att = attribute(_result([_match("cloudflare", 20, ["cert"]),
+                                 _match("openresty", 7, ["headers"], "origin")]))
+        assert att["state"] == ATT.STATE_ATTRIBUTED
+        assert att["vendor"] == "cloudflare"
+
+    def test_strong_edge_plus_unrelated_origin_tech_is_one_winner(self):
+        # edge + origin tech at SIMILAR scores: the origin is a layer, not
+        # a rival — never AMBIGUOUS and never a surprise primary
+        att = attribute(_result([_match("imperva", 37, ["netblock", "headers"]),
+                                 _match("varnish", 30, ["netblock", "headers"], "origin")]))
+        assert att["state"] == ATT.STATE_ATTRIBUTED
+        assert att["vendor"] == "imperva"
+        assert [l["vendor"] for l in att["layers"]] == ["varnish"]
+
+    def test_strong_a_plus_weak_b_header_keeps_b_as_alternative(self):
+        att = attribute(_result([_match("akamai", 47, ["netblock", "cname", "headers"]),
+                                 _match("wordpress-vip", 7, ["headers"])]))
+        assert att["state"] == ATT.STATE_ATTRIBUTED
+        assert att["vendor"] == "akamai"
+        alts = {a["vendor"] for a in att["alternatives"]}
+        assert "wordpress-vip" in alts
+
+    def test_two_genuinely_strong_edges_are_ambiguous(self):
+        att = attribute(_result([_match("cloudflare", 37, ["netblock", "headers"]),
+                                 _match("aws-cloudfront", 40, ["cname", "cert"])]))
+        assert att["state"] == ATT.STATE_AMBIGUOUS
+        assert att["vendor"] is None
+
+    def test_network_ptr_vs_http_header_close_call_is_unknown(self):
+        # the v0.1.41 allianz/miraeasset pattern: a network-level PTR (15)
+        # vs an HTTP header (7) — both weak, gap within the margin,
+        # neither defensible as the edge -> UNKNOWN, not a coin flip
+        att = attribute(_result([_match("aws-global-accelerator", 15, ["ptr"]),
+                                 _match("cloudflare", 7, ["headers"])]))
+        assert att["state"] == ATT.STATE_UNKNOWN
+        assert att["vendor"] is None

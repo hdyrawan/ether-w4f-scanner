@@ -1,0 +1,44 @@
+{
+  "observations": {
+    "host": "api.example.com",
+    "hostport": "api.example.com:443",
+    "port": 443,
+    "ips": ["203.0.113.5"],
+    "cname": ["api.example.com.cdn.cloudflare.net"],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Akamai Technologies Inc.",
+      "issuer": "O=Akamai Technologies Inc.",
+      "subject": "CN=api.example.com",
+      "spki_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "days_remaining": 60
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Akamai Technologies Inc.",
+        "issuer": "O=Akamai Technologies Inc.",
+        "subject": "CN=api.example.com",
+        "spki_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "days_remaining": 60
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "api.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "UNKNOWN",
+    "note": "DNS-vs-certificate conflict: the CNAME says Cloudflare, the certificate says Akamai — two weak categories pointing at different vendors, no third signal to break the tie"
+  }
+}

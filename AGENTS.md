@@ -203,6 +203,24 @@ evidence when appropriate → classify evidence strength/provenance → check
 shared infrastructure / collision risk → positive test → negative/collision
 test → PROMOTE / PASSIVE-ONLY / UNKNOWN / REJECT.
 
+**Error taxonomy (v0.1.42).** Every per-host failure keeps the readable
+`error` string AND gains a stable `error_class` (`dns-nxdomain`,
+`dns-noanswer`, `dns-timeout`, `conn-refused`, `tcp-timeout`,
+`network-unreachable`, `tls-timeout`, `tls-handshake`, `cert`,
+`http-timeout`, `redirect`, `http-protocol`, `upstream`, `other`). DNS
+no-answer (apex exists but the site lives at www.*) is deliberately
+distinct from NXDOMAIN. HTTP-layer failures are promoted to the error
+contract (mTLS's certificate-required alert is NOT an error — it is the
+`mtls` finding).
+
+**Weak close-call rule (v0.1.42).** If the top edge candidate scores below
+the ambiguity floor (30) and the second edge is within the ambiguity margin
+(8), the state is UNKNOWN — never ATTRIBUTED to whichever weak candidate
+happened to score a few points higher. A correct UNKNOWN beats a
+low-confidence coin flip. Strong evidence still wins decisively over weak
+generic evidence (netblock > cname/cert > header; origins are layers, not
+rivals).
+
 ## Known traps (kept for the next reader)
 
 1. **`getaddrinfo` canonical-name fallback** must use `info[3]` (canonname),

@@ -197,6 +197,8 @@ class TestPublicApi:
                          headers=["Server: nginx"], body=body)
         out = fingerprint_host("127.0.0.1", port=srv.port, timeout=5.0, verify=True)
         assert out["block"] and out["block"]["vendor"] == "fortiweb"
+        # provoked evidence is provenance-tagged, never confused with passive
+        assert out["block"]["source"] == "verify"
 
     def test_fingerprint_host_no_http(self, tls_server):
         from w4f import fingerprint_host

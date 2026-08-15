@@ -1,0 +1,46 @@
+{
+  "observations": {
+    "host": "invest.example.com",
+    "hostport": "invest.example.com:443",
+    "port": 443,
+    "ips": ["52.74.197.46"],
+    "cname": [],
+    "ptr": ["ec2-52-74-197-46.ap-southeast-1.compute.amazonaws.com"],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Amazon",
+      "issuer": "O=Amazon",
+      "subject": "CN=invest.example.com",
+      "spki_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "days_remaining": 40
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Amazon",
+        "issuer": "O=Amazon",
+        "subject": "CN=invest.example.com",
+        "spki_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "days_remaining": 40
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "myserver",
+          "via": "1.1 5b4e3f25baed4c6aa24ba5622923b7a2.cloudfront.net (CloudFront)",
+          "x-cache": "Miss from cloudfront"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "invest.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "UNKNOWN",
+    "note": "ELB PTR vs CloudFront via: the DNS/PTR points at an AWS load balancer, the HTTP path went through CloudFront — both weak and close, neither defensible as THE edge"
+  }
+}

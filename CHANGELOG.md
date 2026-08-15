@@ -5,6 +5,41 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.42] — 2026-08-15
+
+Hardening pass on the v0.1.41 financial-validation findings. No new
+vendors; the goal was uncertainty handling, not vendor count.
+
+- **ERROR taxonomy (`error_class`).** Every probe failure now carries a
+  stable structured class alongside the readable `error` string:
+  `dns-nxdomain` / `dns-noanswer` (the JP apex pattern — domain exists,
+  site lives at www.* — is now distinct from NXDOMAIN) / `dns-timeout` /
+  `conn-refused` / `tcp-timeout` / `network-unreachable` / `tls-timeout` /
+  `tls-handshake` / `cert` / `http-timeout` / `redirect` / `http-protocol`
+  / `upstream` / `other`. `resolve()` records the DNS sub-class;
+  `classify_error()` maps the rest. HTTP-layer failures (timeout, protocol,
+  redirect loop) are now promoted to the per-host error contract — they
+  previously lived only inside `tls.http.status` and made a failed GET look
+  clean. mTLS's certificate-required alert is NOT an error (it is the
+  `mtls` finding).
+- **Weak close-call rule.** When the top edge candidate is below the
+  ambiguity floor (30) and the second edge is within the margin (8), the
+  state is UNKNOWN — no more ATTRIBUTED-LOW coin flips on near-tied weak
+  evidence (the v0.1.41 allianz/miraeasset network-vs-HTTP patterns).
+  Strong evidence still wins decisively over weak generic evidence
+  (collision tests lock it: netblock > cname/cert > header; origins are
+  layers, never rivals).
+- **Attribution corpus 19 → 23 fixtures** (+4): network-vs-HTTP conflict
+  (GA PTR vs Cloudflare), DNS-vs-certificate conflict, ELB PTR vs
+  CloudFront, weak close-call (myra vs WEDOS). Tally: 12 correct /
+  2 ambiguous / 7 unknown / 1 intercepted / 1 error / 0 incorrect.
+- **Tests**: +13 (463 passed, 11 skipped) — error-taxonomy unit tests
+  (`tests/test_errors.py`), evidence-conflict collision tests, verify
+  `source=verify` provenance assertion, HTTP-error promotion + mTLS-exempt
+  integration tests.
+- **AGENTS.md**: error taxonomy contract + weak close-call rule documented
+  as durable methodology.
+
 ## [0.1.41] — 2026-08-15
 
 Detection-engine validation pass against a diverse financial-industry corpus

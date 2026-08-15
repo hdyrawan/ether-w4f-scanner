@@ -1,0 +1,43 @@
+{
+  "observations": {
+    "host": "www.example.com",
+    "hostport": "www.example.com:443",
+    "port": 443,
+    "ips": ["166.117.254.128"],
+    "cname": [],
+    "ptr": ["a71874fdfd02509d0.awsglobalaccelerator.com"],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Example CA",
+      "subject": "CN=www.example.com",
+      "spki_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "days_remaining": 55
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Example CA",
+        "subject": "CN=www.example.com",
+        "spki_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "days_remaining": 55
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "cloudflare",
+          "cf-ray": "a2b66a64b9cfd3c6-SIN"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "www.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "UNKNOWN",
+    "note": "network-vs-HTTP conflict: a Global Accelerator PTR (routing layer) and a Cloudflare HTTP edge disagree, both weak and close — the honest answer is UNKNOWN, not whichever scored a few points higher"
+  }
+}

@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.41
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.42
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -26,6 +26,10 @@ Passive **TLS / CDN / WAF / edge fingerprinting** for API endpoints. For any
 SNI TLS handshake, one GET — and matches the collected signals (response
 headers, cookies, certificate issuer/org, CNAME/PTR suffixes, IP netblocks)
 against a vendor signature table to **name the edge in front of the origin**.
+
+w4f performs evidence-based attribution of the Internet-facing edge and
+explicitly handles ambiguity, layering, interception, weak evidence, and
+verification-only WAF behavior.
 
 ```bash
 w4f --target-file hosts.txt

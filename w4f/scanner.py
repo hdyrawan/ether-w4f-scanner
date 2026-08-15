@@ -34,9 +34,86 @@ UA = ("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36")
 
 
+def classify_error(msg: str) -> str:
+    """Map a probe error message to a stable error class.
+
+    The per-host ``error`` string contract is unchanged; this is the
+    structured axis (v0.1.42). Categories: dns-*, conn-refused,
+    tcp-timeout, network-unreachable, tls-timeout, tls-handshake, cert,
+    http-timeout, redirect, http-protocol, upstream, other.
+    """
+    m = (msg or "").lower()
+    if "dns did not resolve" in m:
+        return "dns-error"
+    if "connect failed" in m:
+        if "timed out" in m or "timeout" in m:
+            return "tcp-timeout"
+        if "refused" in m:
+            return "conn-refused"
+        if ("network is unreachable" in m or "no route" in m
+                or "errno 101" in m or "errno 113" in m):
+            return "network-unreachable"
+        if "certificate" in m:
+            return "cert"
+        return "connect"
+    if "tls failed" in m:
+        if "timed out" in m or "timeout" in m:
+            return "tls-timeout"
+        if "certificate" in m or "verify" in m:
+            return "cert"
+        if ("handshake" in m or "wrong version" in m or "alert" in m
+                or "sslv3" in m or "tlsv1" in m):
+            return "tls-handshake"
+        return "tls"
+    if m.startswith("error:") or "too many redirects" in m:
+        if "too many redirects" in m or "redirect" in m:
+            return "redirect"
+        if "timed out" in m or "timeout" in m:
+            return "http-timeout"
+        if "connection reset" in m or "broken pipe" in m or "brokenpipe" in m:
+            return "upstream"
+        if "protocol" in m or "bad status" in m:
+            return "http-protocol"
+        return "http"
+    if "refused" in m:
+        return "conn-refused"
+    if "timed out" in m or "timeout" in m:
+        return "tcp-timeout"
+    return "other"
+
+
+def _dns_error_class(exc: Exception | None) -> str:
+    """Classify a DNS failure beyond the blanket 'DNS did not resolve'."""
+    if exc is None:
+        return "dns-error"
+    name = type(exc).__name__.lower()
+    msg = str(exc).lower()
+    if "nxdomain" in name or "non-existent" in msg or "does not exist" in msg:
+        return "dns-nxdomain"
+    if "noanswer" in name or "does not contain an answer" in msg:
+        return "dns-noanswer"
+    if "timeout" in name or "timed out" in msg:
+        return "dns-timeout"
+    if "nonameservers" in name or "no nameservers" in msg:
+        return "dns-nonameserver"
+    if getattr(exc, "errno", None) in (socket.EAI_NONAME, socket.EAI_NODATA):
+        return "dns-nxdomain"
+    if getattr(exc, "errno", None) == socket.EAI_AGAIN:
+        return "dns-timeout"
+    return "dns-error"
+
+
 def resolve(host: str) -> dict:
-    """A+AAAA with PTR, and the CNAME chain. Never raises."""
-    out = {"cname": [], "ips": [], "ptr": []}
+    """A+AAAA with PTR, and the CNAME chain. Never raises.
+
+    On total DNS failure the returned dict carries ``dns_error`` (a class
+    from :func:`_dns_error_class`) and ``dns_error_detail`` so callers can
+    distinguish NXDOMAIN from no-answer (the classic apex-has-only-www
+    case) from a resolver timeout — without collapsing them into one
+    blanket message.
+    """
+    out: dict = {"cname": [], "ips": [], "ptr": []}
+    dns_fail: Exception | None = None
     try:
         ip = ipaddress.ip_address(host)
         out["ips"] = [str(ip)]
@@ -58,12 +135,14 @@ def resolve(host: str) -> dict:
                     out["cname"].append(c)
         except Exception as e:
             log.debug("CNAME lookup failed for %s: %s", host, e)
+            dns_fail = e
         for qtype in ("A", "AAAA"):
             try:
                 for r in _DNS.resolver.resolve(host, qtype):
                     out["ips"].append(str(r))
             except Exception as e:
                 log.debug("%s lookup failed for %s: %s", qtype, host, e)
+                dns_fail = e
         for ip in out["ips"]:
             try:
                 rev = _DNS.reversename.from_address(ip)
@@ -77,9 +156,13 @@ def resolve(host: str) -> dict:
             for info in infos:
                 ip = info[4][0]
                 if ip not in out["ips"]:
-                    out["ips"].append(ip)
+                    out["ips"].append(str(ip))
         except Exception as e:
             log.debug("getaddrinfo failed for %s: %s", host, e)
+            dns_fail = e
+    if not out["ips"]:
+        out["dns_error"] = _dns_error_class(dns_fail)
+        out["dns_error_detail"] = str(dns_fail or "")
     if not out["cname"]:
         try:
             # getaddrinfo returns (family, type, proto, canonname, sockaddr);
@@ -917,9 +1000,20 @@ def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
         result["ips"] = resolved.get("ips", [])
         if not resolved["ips"]:
             result["error"] = "DNS did not resolve"
+            result["error_class"] = resolved.get("dns_error") or "dns-error"
+            result["dns_error_detail"] = resolved.get("dns_error_detail")
             return result
         tls = tls_probe(host, port, path, timeout, do_http)
         result["tls"] = tls
+        # HTTP-level failures (timeout, redirect loop, protocol errors)
+        # surface as `status: ERROR: ...` inside the http layer. Promote
+        # them to the per-host error contract so a failed GET is as visible
+        # as a failed handshake. mTLS is exempt: there the alert IS the
+        # finding (`mtls`), not an error.
+        _http_status = (tls.get("http") or {}).get("status", "")
+        if _http_status.startswith("ERROR") and "certificate required" not in _http_status.lower():
+            result["error"] = _http_status
+            result["error_class"] = classify_error(_http_status)
         # A handshake that never ESTABLISHED (no tls_version) means the host
         # was never actually probed — connect refused, timed out, network
         # unreachable. Without this the host came back error=None with an
@@ -934,6 +1028,7 @@ def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
         # set) and the certificate-required alert lands on the GET instead.
         if tls.get("tls_error") and not tls.get("tls_version"):
             result["error"] = tls["tls_error"]
+            result["error_class"] = classify_error(tls["tls_error"])
         # ALPN observation: the TLS handshake advertises h2+http/1.1 but the
         # GET is sent over a separate http/1.1-only connection (h2 frames
         # would read as garbage). Report the negotiated ALPN distinctly and
@@ -1013,6 +1108,7 @@ def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
             result["grpc"] = grpc_probe(host, port, timeout)
     except Exception as e:
         result["error"] = f"probe failed: {e}"
+        result["error_class"] = classify_error(str(e))
     # Interpretation layer, last: what the collected evidence adds up to
     # (state, primary candidate, alternatives). Additive — `verdict` keeps
     # its exact shape, so existing --json/--csv/--sarif consumers are
