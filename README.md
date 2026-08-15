@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.32
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.33
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -146,7 +146,7 @@ python3 -m pytest           # run the test suite
 ### Verify & uninstall
 
 ```bash
-w4f --version        # e.g. "w4f 0.1.32 — passive TLS / CDN / WAF / edge fingerprinting"
+w4f --version        # e.g. "w4f 0.1.33 — passive TLS / CDN / WAF / edge fingerprinting"
 w4f --help           # full usage
 pipx uninstall w4f   # or: uv tool uninstall w4f / pip uninstall w4f
 ```
@@ -285,7 +285,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.32
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.33
 
 HOST                    EDGE        CONF  BASIS               TLS     CERT                 HTTP  NOTES
 api.example.com:443     imperva +1   62%  net+cert+hdr        1.3 h2  Imperva Inc 64d       403  mTLS  BLOCK imperva

@@ -5,6 +5,24 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.33] — 2026-08-15
+
+SAN in the default triage view (user review). The certificate's SAN list is
+where sibling hostnames and wildcard reach show up — the thing a sweep is
+actually looking for — so it belongs in the per-host block, not behind
+`--verbose`.
+
+- **`san` row in the triage block**, after `cert`, capped at 3 entries with a
+  `(+N more)` tail. `--verbose` keeps its 6. A wildcard cert carrying 50+
+  SANs would otherwise push the block off one screen; the full list stays in
+  `--json`.
+- Both views share one `_san_summary()` helper instead of duplicating the
+  split/truncate logic.
+- The row is omitted entirely when the cert carries no SAN data (the
+  no-`cryptography` degradation path) rather than printing an empty label.
+- +3 tests (290 total): SAN present in the triage block, triage cap tighter
+  than verbose, no row when the cert has none.
+
 ## [0.1.32] — 2026-08-15
 
 Output depth pass (user review): 0.1.31 moved every fact behind `--verbose`
