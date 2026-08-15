@@ -112,6 +112,47 @@ the tool and its documentation.
   documentation, the raw `--json`/`--md` and any writeup belong in the
   consuming research repo / vault, never here (see the code-only rule).
 
+## Detection methodology
+
+Every new vendor/signature follows this process:
+
+1. **Research.** Identify the actual product and deployment role (edge /
+   WAF / CDN / gateway / origin / middlebox).
+
+2. **Evidence collection.** Investigate: vendor-published edge ranges,
+   network ownership, DNS/CNAME, certificate/TLS, HTTP, cookies, block
+   behavior.
+
+3. **Evidence classification.** Prefer: vendor-published edge ranges >
+   network ownership > distinctive CNAME > certificate > distinctive TLS
+   behavior > distinctive HTTP behavior > cookies > generic headers.
+
+4. **Specificity check.** Reject signals that are: shared across vendors,
+   generic infrastructure markers, inherited from parent/shared cloud
+   infrastructure, or only observed on the vendor's own properties without
+   customer evidence.
+
+5. **Provenance.** Record the source and verification date for strong
+   signals (hostname-free, per the code-only rule).
+
+6. **Validation.** Every promoted signal requires a positive test, a
+   negative test, and a collision test where applicable.
+
+7. **Promotion decision.**
+   - PROMOTE: evidence is sufficiently specific and reproducible.
+   - PASSIVE-ONLY: useful weak signal, but insufficient for strong
+     attribution.
+   - UNKNOWN: insufficient evidence.
+   - REJECT: evidence is too generic or ambiguous.
+
+8. **Netblock-specific gate.** A netblock may be added only when it is
+   vendor-published or otherwise authoritative, represents the relevant
+   edge product, is stable enough to avoid broad false coverage, is
+   boundary tested, and has no cross-vendor overlap.
+
+Adding a signature is a claim about attribution, not merely a record that
+a string was observed.
+
 ## Known traps (kept for the next reader)
 
 1. **`getaddrinfo` canonical-name fallback** must use `info[3]` (canonname),
