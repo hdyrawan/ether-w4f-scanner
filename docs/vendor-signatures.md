@@ -172,6 +172,10 @@ Headers:
 - `wzws-ray` — **360 WangZhanBao** (网站卫士 / QiAnXin cloud WAF) edge stamp.
 - `x-azion-*` prefix (`x-azion-request-id`, `x-azion-edge-location`) —
   **Azion** (Brazilian edge).
+- `x-rq: <pop> <n> <n> <n>` — **WordPress VIP** edge-cache geo header (per
+  VIP docs; `sin1 0 40 9980` = Singapore PoP, `lhr3` = London). Customers
+  also CNAME to `*.go-vip.net`. VIP runs on Akamai's edge, so a host can be
+  `akamai + wordpress-vip` at once.
 - `server: QRATOR` — **Qrator Labs** (Russian anti-DDoS). `server:
   Variti/<ver>` — **Variti** (Russian WAF/CDN; also TLS-fingerprints
   clients, so it can block a passive probe entirely). `server: uewaf/<ver>`
@@ -280,7 +284,7 @@ default green:
 | red | Fastly (+ WAF), Alibaba CDN |
 | cyan | AWS family (CloudFront/WAF/ELB/…), ChinaCache, Azion |
 | bright blue | Azure family (Front Door/AppGW/…), Wangsu, Huawei Cloud CDN |
-| bright magenta | Tencent family, Vercel, Squarespace, Volcengine |
+| bright magenta | Tencent family, Vercel, Squarespace, Volcengine, WordPress VIP |
 | magenta | Google GFE, GCP Armor |
 | bright red | F5, NetScaler, WSO2 |
 | bright cyan | Kong, Knownsec, UCloud WAF (uewaf) |

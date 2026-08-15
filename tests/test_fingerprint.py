@@ -619,3 +619,16 @@ class TestChineseEdges:
         r = _result(headers={"x-azion-request-id": "e217d28c248bfb33391a838b4424599f",
                              "x-azion-edge-location": "MIA"})
         assert "azion" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_wordpress_vip_x_rq(self):
+        # WordPress VIP edge-cache geo header (per VIP docs): POP code + numbers
+        r = _result(headers={"x-rq": "sin1 0 40 9980"})
+        assert "wordpress-vip" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_wordpress_vip_cname(self):
+        r = _result(cname=["ziff.go-vip.net"])
+        assert "wordpress-vip" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_wordpress_vip_does_not_fire_on_generic(self):
+        r = _result(headers={"server": "nginx", "x-rq": "weird-value"})
+        assert "wordpress-vip" not in [m["vendor"] for m in fingerprint(r)]
