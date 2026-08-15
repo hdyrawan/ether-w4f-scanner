@@ -2,13 +2,14 @@
 
 Wangsu (网宿 / ChinaNetCenter) is one of China's largest CDN providers.
 Customers CNAME to Wangsu's own DNS suffixes (wscdns.com, wscvip.cn,
-wswebpic.com, wsglb0.com — WS = WangSu) and its global LB nodes name
-themselves `uproxy-<n>` in the Via header. NOTE: the generic
+wswebpic.com, wsglb0.com, wswebcdn.cn — WS = WangSu) and its global LB
+nodes name themselves `uproxy-<n>` in the Via header. NOTE: the generic
 `(Cdn Cache Server V2.0)` via marker is NOT used — ChinaCache (蓝汛) emits
 the same string, so keying on it would mislabel every ChinaCache host.
 Observed on Chinese banking, government, media, and e-commerce hosts.
+wswebcdn.cn added v0.1.43 (observed on a Chinese banking host).
 """
 
 VENDOR = {'name': 'wangsu', 'deployment': 'cloud',
  'headers': {'via': r'uproxy', 'x-via': r'uproxy'},
- 'cname': r'wscdns\.com|wscvip\.cn|wswebpic\.com|wsglb\d*\.com'}
+ 'cname': r'wscdns\.com|wscvip\.cn|wswebpic\.com|wsglb\d*\.com|wswebcdn\.cn'}

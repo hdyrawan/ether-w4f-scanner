@@ -5,6 +5,26 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.43] — 2026-08-15
+
+Regional-vantage validation findings → three concrete CN fingerprint gaps
+(the DNS-geo pass observed CNAME suffixes that existed in the wild but
+were NOT in the signature table — false negatives, evidence already
+collected but not fired).
+
+- **wangsu**: + `wswebcdn.cn` delivery suffix (observed on a Chinese
+  banking host — `www.<bank>.cn.wswebcdn.cn`). Live: banking host verdict
+  went nginx-only → `wangsu` (cname 20).
+- **aliyun**: + `yundunwaf\d*\.com` — Alibaba Cloud WAF (云盾) delivery
+  CNAMEs (observed on a Chinese fintech host). Live: fintech host verdict
+  went cookie-only (3) → `aliyun` 23.
+- **tencent-edgeone**: `eo\.dnse4\.com` → `eo\.dnse\d+\.com` — dnse2 and
+  dnse4 both observed (a Chinese insurer). Live: insurer verdict went
+  header-only (7) → `tencent-edgeone` 27.
+- +6 tests (469 passed, 11 skipped): positive + similar-but-wrong negative
+  per new signal. No vendor count change (same 102 vendors); confidence
+  and evidence basis improve for CN financial hosts.
+
 ## [0.1.42] — 2026-08-15
 
 Hardening pass on the v0.1.41 financial-validation findings. No new

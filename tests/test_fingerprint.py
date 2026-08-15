@@ -709,6 +709,33 @@ class TestRegionalEdges:
         r = _result(cname=["host.example.com"])
         assert "sakura" not in [m["vendor"] for m in fingerprint(r)]
 
+    def test_wangsu_wswebcdn_cname(self):
+        # v0.1.43: wswebcdn.cn delivery suffix (observed on a CN bank)
+        r = _result(cname=["www.example.com.wswebcdn.cn"])
+        assert "wangsu" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_wangsu_wswebcdn_similar_does_not_fire(self):
+        r = _result(cname=["host.wswebcdn.example.com"])
+        assert "wangsu" not in [m["vendor"] for m in fingerprint(r)]
+
+    def test_aliyun_yundunwaf_cname(self):
+        # v0.1.43: Alibaba Cloud WAF (云盾) delivery CNAME
+        r = _result(cname=["all.example.com.c.yundunwaf1.com"])
+        assert "aliyun" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_aliyun_yundunwaf_similar_does_not_fire(self):
+        r = _result(cname=["host.yundunwaf.example.com"])
+        assert "aliyun" not in [m["vendor"] for m in fingerprint(r)]
+
+    def test_edgeone_dnse2_cname(self):
+        # v0.1.43: dnse2 as well as dnse4 (observed on a CN insurer)
+        r = _result(cname=["www.example.com.eo.dnse2.com"])
+        assert "tencent-edgeone" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_edgeone_dnse_similar_does_not_fire(self):
+        r = _result(cname=["www.example.com.eo.dnse.example.com"])
+        assert "tencent-edgeone" not in [m["vendor"] for m in fingerprint(r)]
+
     def test_360wangzhanbao_wzws_header(self):
         r = _result(headers={"wzws-ray": "002-1786734657.007-cache02fst-waf04fst"})
         assert "360wangzhanbao" in [m["vendor"] for m in fingerprint(r)]
