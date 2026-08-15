@@ -92,6 +92,10 @@ A host inside Cloudflare's netblock with a Cloudflare-issued cert, a
 almost certainly that vendor; low confidence = a single weak signal that a
 different component could also emit.
 
+The categories that produced a score are kept on the match as
+`categories` (strongest first) — so a consumer can tell 30 points of
+netblock evidence from 30 points of assorted headers without re-deriving it.
+
 Some rules gate on *required* signals (AND/OR semantics via the `requires`
 field) so a single weak signal can never fire a composite rule — e.g.
 `aws-waf` needs a 403 **and** an AWS-specific marker, never a bare 403.
@@ -263,12 +267,23 @@ evidence is first.
 ## Reading a verdict
 
 ```
-verdict  cloudflare (5, 82%): header server: cloudflare; header cf-ray: …;
-         cookie: __cf_bm=…; cert: Cloudflare, Inc.; netblock: 104.18.1.79 in 104.16.0.0/13
+verdict  cloudflare (82%, net+cert+cname+hdr): header server: cloudflare;
+         header cf-ray: …; cert: Cloudflare, Inc.; cname: …cdn.cloudflare.net;
+         netblock: 104.18.1.79 in 104.16.0.0/13
 ```
 
-`(5, 82%)` = five evidence strings, 82% confidence. Every evidence string
-names its category so you can judge it yourself.
+`(82%, net+cert+cname+hdr)` = 82% confidence, built from the netblock, cert,
+CNAME and header categories. The category list (`categories` in the result
+dict, `BASIS` in the summary table) is the part to read first: `net`/`cert`/
+`cname`/`ptr` are evidence the origin cannot fabricate, while a verdict
+resting only on `hdr`/`cookie` is a string anyone can set — the console
+marks those *headers only — spoofable*. Every evidence string names its
+category so you can judge it yourself.
+
+Verdicts are ranked by confidence, so `verdict[0]` is the best-evidenced
+vendor and the one the summary table, `--csv` and SARIF call the edge. A
+second entry is usually the origin behind that edge (`imperva` in front of
+`nginx`), shown as `+1` in the table and on a `stack` line in the block.
 
 ## Console colors per vendor
 

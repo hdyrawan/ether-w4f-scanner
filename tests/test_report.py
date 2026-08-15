@@ -35,6 +35,8 @@ def _result_with_verdict():
         "mtls": False,
         "chain_verified": True,
         "verdict": [{"vendor": "cloudflare", "signals": 3, "confidence": 82,
+                     # netblock 30 + cert 25 + cname 20 + headers 7 = 82
+                     "categories": ["netblock", "cert", "cname", "headers"],
                      "evidence": ["header server: cloudflare", "header cf-ray: abc",
                                   "cname: api.example.com.cdn.cloudflare.net"]}],
     }
@@ -94,51 +96,106 @@ class TestVendorColors:
         # pytest capture is not a TTY — verdict line must be plain
         from w4f.report import _verdict_line
         line = _verdict_line([{"vendor": "cloudflare", "signals": 3,
-                               "confidence": 82, "evidence": []}])
+                               "confidence": 82, "categories": ["netblock"],
+                               "evidence": []}])
         assert "\033[" not in line
-        assert "cloudflare (3, 82%)" in line
+        # confidence + what it rests on; the raw signal count is verbose-only
+        assert "cloudflare (82%, net)" in line
 
     def test_verdict_line_primary_own_line_secondaries_dimmed(self):
         # the triage format: primary vendor on the "verdict" row, secondary
         # vendors on continuation rows
         from w4f.report import _verdict_line
         ver = [{"vendor": "imperva", "signals": 2, "confidence": 60,
-                "evidence": ["x-iinfo"]},
+                "categories": ["netblock", "headers"], "evidence": ["x-iinfo"]},
                {"vendor": "nginx", "signals": 1, "confidence": 7,
-                "evidence": ["header server: nginx"]}]
+                "categories": ["headers"], "evidence": ["header server: nginx"]}]
         out = _verdict_line(ver)
         lines = out.splitlines()
         assert lines[0].startswith("verdict")
-        assert "imperva (2, 60%)" in lines[0]
+        assert "imperva (60%, net+hdr)" in lines[0]
         assert lines[1].startswith("       ")  # continuation, aligned
-        assert "nginx (1, 7%)" in lines[1]
+        assert "nginx (7%, hdr)" in lines[1]
+
+
+def _results_fixture():
+    r1 = _result_with_verdict()
+    r2 = _result_with_verdict()
+    r2["host"] = r2["hostport"] = "bank.example.net:443"
+    r2["verdict"] = [{"vendor": "imperva", "signals": 2, "confidence": 60,
+                      "categories": ["netblock", "headers"],
+                      "evidence": ["header x-iinfo: 1-2-3", "netblock: 1.2.3.4 in 1.2.3.0/24"]},
+                     {"vendor": "nginx", "signals": 1, "confidence": 7,
+                      "categories": ["headers"], "evidence": ["header server: nginx"]}]
+    r2["tls"]["mtls"] = True
+    r3 = {"host": "dead.example.io", "hostport": "dead.example.io:443",
+          "error": "DNS did not resolve", "tls": {}, "verdict": []}
+    return [r1, r2, r3]
 
 
 class TestSummaryTable:
     def _results(self):
-        r1 = _result_with_verdict()
-        r2 = _result_with_verdict()
-        r2["host"] = r2["hostport"] = "bank.example.net:443"
-        r2["verdict"] = [{"vendor": "imperva", "signals": 2, "confidence": 60,
-                          "evidence": ["x-iinfo"]}]
-        r2["tls"]["mtls"] = True
-        r3 = {"host": "dead.example.io", "hostport": "dead.example.io:443",
-              "error": "DNS did not resolve", "tls": {}, "verdict": []}
-        return [r1, r2, r3]
+        return _results_fixture()
 
     def test_header_and_rows(self):
         from w4f.report import fmt_summary_table
         out = fmt_summary_table(self._results())
         assert "HOST" in out and "EDGE" in out and "CONF" in out
-        assert "mTLS" in out and "BLOCK" in out and "ERR" in out
-        assert "cloudflare" in out and "imperva" in out and "unknown" in out
+        # detail columns added in 0.1.32
+        assert "BASIS" in out and "TLS" in out and "CERT" in out
+        assert "HTTP" in out and "NOTES" in out
+        assert "cloudflare" in out and "imperva" in out
         assert "DNS did not resolve" in out
+
+    def test_errored_host_has_no_edge_and_unscanned_has_unknown(self):
+        # a host that failed to probe reports "-": "unknown" would claim we
+        # looked and found nothing. A host that WAS scanned reports "unknown".
+        from w4f.report import fmt_summary_table
+        rs = _results_fixture()
+        rs[0]["verdict"] = []                       # scanned, nothing matched
+        rows = fmt_summary_table(rs).splitlines()
+        scanned = next(ln for ln in rows if ln.startswith("api.example.com"))
+        failed = next(ln for ln in rows if ln.startswith("dead.example.io"))
+        assert "unknown" in scanned
+        assert "unknown" not in failed
+        assert "ERR DNS did not resolve" in failed
 
     def test_critical_flags_present(self):
         from w4f.report import fmt_summary_table
         out = fmt_summary_table(self._results())
-        assert "YES" in out          # mTLS flag for the imperva host
-        assert "DNS did not resolve" in out  # error column shows the reason
+        assert "mTLS" in out                 # flag token for the imperva host
+        assert "ERR DNS did not resolve" in out  # reason travels with the flag
+
+    def test_basis_column_names_signal_categories(self):
+        from w4f.report import fmt_summary_table
+        out = fmt_summary_table(self._results())
+        assert "net+cert+cname+hdr" in out   # cloudflare host
+        assert "net+hdr" in out              # imperva host
+
+    def test_secondary_vendor_count_marked(self):
+        from w4f.report import fmt_summary_table
+        out = fmt_summary_table(self._results())
+        assert "imperva +1" in out           # nginx underneath
+
+    def test_columns_align_when_colored(self, monkeypatch):
+        # padding must use the PLAIN cell length — padding inside the ANSI
+        # escape shifts every column to the right
+        import re as _re
+        import sys as _sys
+        from unittest import mock
+        from w4f.report import fmt_summary_table
+
+        class T:
+            def isatty(self): return True
+            def write(self, s): pass
+        monkeypatch.setenv("COLUMNS", "200")
+        with mock.patch.object(_sys, "stdout", T()):
+            out = fmt_summary_table(self._results())
+        assert "\033[" in out                       # colored
+        lines = [_re.sub(r"\033\[[0-9;]*m", "", ln) for ln in out.splitlines()]
+        conf_col = lines[0].index("CONF")
+        for ln in lines[1:]:
+            assert ln[conf_col:conf_col + 5].strip().endswith(("%", "-"))
 
     def test_no_markdown(self):
         from w4f.report import fmt_summary_table
@@ -161,7 +218,57 @@ class TestCompactBlock:
         out = fmt_compact_block(_result_with_verdict())
         assert "api.example.com:443" in out
         assert "cloudflare" in out
-        assert "(3, 82%)" in out
+        assert "82%" in out
+        assert "net+cert+cname+hdr" in out
+
+    def test_block_adds_facts_the_table_lacks(self):
+        # the whole point of the block: evidence, path, cert, pin — none of
+        # which fits in a table row
+        from w4f.report import fmt_compact_block
+        out = fmt_compact_block(_result_with_verdict())
+        assert "header server: cloudflare" in out      # evidence
+        assert "200" in out and "TLS1.3 h2" in out     # path
+        assert "Example CA" in out and "100d left" in out
+        assert "chain verified" in out
+        assert "spki aaaa" in out                      # pin (truncated)
+
+    def test_stack_lists_secondary_vendors(self):
+        from w4f.report import fmt_compact_block
+        out = fmt_compact_block(_results_fixture()[1])
+        assert "stack" in out and "nginx" in out
+
+    def test_weak_verdict_marked(self):
+        from w4f.report import fmt_compact_block
+        r = _result_with_verdict()
+        r["verdict"] = [{"vendor": "nginx", "signals": 1, "confidence": 7,
+                         "categories": ["headers"], "evidence": ["header server: nginx"]}]
+        assert "spoofable" in fmt_compact_block(r)
+
+    def test_unknown_edge_shows_signature_leads(self):
+        # an unknown verdict is a tool gap — print the headers that matched
+        # nothing so the sweep feeds the next signature file
+        from w4f.report import fmt_compact_block
+        r = _result_with_verdict()
+        r["verdict"] = []
+        r["tls"]["http"]["headers"] = {
+            "server": "acme-edge", "x-acme-pop": "sin1",
+            "content-type": "text/html", "x-frame-options": "deny",
+        }
+        out = fmt_compact_block(r)
+        assert "unknown" in out
+        assert "server: acme-edge" in out
+        assert "x-acme-pop: sin1" in out
+        assert "content-type" not in out      # noise excluded
+        assert "x-frame-options" not in out   # generic security header excluded
+
+    def test_redirect_chain_shown(self):
+        from w4f.report import fmt_compact_block
+        r = _result_with_verdict()
+        r["tls"]["http"]["redirects"] = ["https://www.api.example.com/"]
+        r["tls"]["http"]["final_host"] = "www.api.example.com"
+        out = fmt_compact_block(r)
+        assert "www.api.example.com" in out
+        assert "1 hop" in out
 
     def test_critical_flags(self):
         from w4f.report import fmt_compact_block
@@ -213,3 +320,68 @@ class TestBanner:
     def test_custom_colors(self):
         out = render_banner("w4f", {"w": "\033[32m", "f": "\033[35m"})
         assert "\033[32m" in out and "\033[35m" in out
+
+
+class TestRollup:
+    def test_counts_edges_and_flags(self):
+        from w4f.report import fmt_rollup
+        out = fmt_rollup(_results_fixture(), elapsed=12.5)
+        assert "3 hosts" in out
+        assert "12.5s" in out
+        assert "cloudflare 1" in out and "imperva 1" in out
+        assert "mTLS 1" in out
+        assert "errors 1" in out
+
+    def test_unknown_hosts_named(self):
+        # the unknown list is the signature-mining queue — name the hosts
+        from w4f.report import fmt_rollup
+        rs = _results_fixture()
+        rs[0]["verdict"] = []
+        out = fmt_rollup(rs)
+        assert "unknown" in out
+        assert "api.example.com:443" in out
+
+    def test_weak_verdicts_called_out(self):
+        from w4f.report import fmt_rollup
+        rs = _results_fixture()
+        rs[0]["verdict"] = [{"vendor": "nginx", "signals": 1, "confidence": 7,
+                             "categories": ["headers"], "evidence": []}]
+        out = fmt_rollup(rs)
+        assert "headers only" in out
+
+    def test_empty(self):
+        from w4f.report import fmt_rollup
+        assert fmt_rollup([]) == ""
+
+    def test_plain_when_not_tty(self):
+        from w4f.report import fmt_rollup
+        assert "\033[" not in fmt_rollup(_results_fixture(), elapsed=1.0)
+
+
+class TestDisplayOrder:
+    def test_risk_first_puts_problems_on_top(self):
+        from w4f.cli import display_order
+        rs = _results_fixture()          # cloudflare(ok), imperva(mTLS), error
+        order = [r["hostport"] for r in display_order(rs, "risk")]
+        assert order[0] == "dead.example.io:443"     # error
+        assert order[1] == "bank.example.net:443"    # mTLS
+        assert order[2] == "api.example.com:443"     # clean, identified
+
+    def test_host_mode_is_alphabetical(self):
+        from w4f.cli import display_order
+        order = [r["hostport"] for r in display_order(_results_fixture(), "host")]
+        assert order == sorted(order)
+
+    def test_edge_mode_groups_by_vendor(self):
+        from w4f.cli import display_order
+        order = [(r.get("verdict") or [{}])[0].get("vendor", "~unknown")
+                 for r in display_order(_results_fixture(), "edge")]
+        assert order == sorted(order)
+
+    def test_file_outputs_stay_host_sorted(self):
+        # display ordering must not mutate the list the file writers use
+        from w4f.cli import display_order
+        rs = _results_fixture()
+        before = [r["hostport"] for r in rs]
+        display_order(rs, "risk")
+        assert [r["hostport"] for r in rs] == before

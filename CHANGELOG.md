@@ -5,6 +5,57 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.32] — 2026-08-15
+
+Output depth pass (user review): 0.1.31 moved every fact behind `--verbose`
+and left a default view whose per-host block only restated the table row.
+The triage view now carries the facts the table has no room for, and the
+summary itself says what a verdict rests on.
+
+**Verdict ranking fix (behavior).** `verdict` was sorted by evidence COUNT,
+so a vendor matched by three headers (all one category, 7%) outranked one
+proven by a netblock (30%) — a Cloudflare-fronted host running a Kong
+gateway summarised as `kong (7%)` with the real edge demoted to a secondary
+line. Ranking is now confidence-first (signals, then name, break ties).
+`verdict[0]` — what the EDGE column and `--csv`/`--sarif` call the edge — is
+now the best-evidenced vendor, not the most-matched one.
+
+- **Signal categories are kept.** Each verdict carries `categories`
+  (strongest-first: `netblock`, `cert`, `cname`, `ptr`, `headers`,
+  `cookies`) — previously computed for the confidence sum and thrown away.
+  Rendered as `BASIS` (`net+cert+hdr`): whether a verdict rests on IP
+  ownership or on a string the origin can set matters more than the
+  percentage it sums to. Additive to `--json`; new `basis` + `final_host`
+  columns appended to `--csv`; `categories`/`basis` in SARIF properties.
+- **Wider summary table**: `HOST | EDGE | CONF | BASIS | TLS | CERT | HTTP |
+  NOTES`. EDGE marks a layered stack (`imperva +1`), NOTES merges the old
+  mTLS/BLOCK/ERR columns and adds a redirect marker (`->www.…`). Columns
+  drop right-to-left on a narrow TTY; piped output always gets the full set.
+  A host that failed to probe shows `-`, not `unknown`.
+- **Per-host block carries facts, not repetition**: verdict evidence, the
+  layer stack, the redirect path + status + TLS, cert issuer/expiry/chain
+  trust, and the SPKI pin.
+- **Unknown edges print `leads`** — the fingerprintable headers/cookies that
+  matched NO signature (per-request ids reduced to their name). An unknown
+  verdict is a tool gap, so the sweep now hands over the raw material for
+  the next signature file instead of a shrug.
+- **Sweep rollup** after the blocks: host count + elapsed, vendor
+  distribution, named unknowns, flag totals, and a count of verdicts resting
+  on headers only.
+- **`--sort risk|host|edge`** (default `risk`: errors, block pages, mTLS,
+  unknown, then weak verdicts first). Console-only — `--json`/`--md`/
+  `--csv`/`--sarif` stay host-sorted so sweep files diff cleanly.
+- `--verbose` gains the redirect chain + final host (recorded since 0.1.10,
+  never displayed) and cert chain-trust; SAN lists are capped at 6 (+N) so a
+  50-SAN wildcard cert stops burying the block, and vendor-ish headers sort
+  ahead of generic security headers in the 8-header cap.
+- Fixed: unknown-edge line indented 10 spaces instead of 4.
+- README: `wordpress-vip` documented (92 → 93 vendors; the 0.1.32 prep
+  commit added the signature without the coverage entry).
+- +21 tests (287 total): confidence-first ranking incl. the kong/cloudflare
+  case, category recording, basis rendering, table columns/alignment under
+  color, block facts, leads extraction, rollup, and display ordering.
+
 ## [0.1.31] — 2026-08-15
 
 Console UX overhaul (user review) — the daily-driver output is now a triage

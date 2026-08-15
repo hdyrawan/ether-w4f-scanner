@@ -365,7 +365,37 @@ class TestSignalCounting:
         # nginx single Server header = headers(7) only
         ver = fingerprint(_result(headers={"server": "nginx"}))
         assert ver == [{"vendor": "nginx", "signals": 1, "confidence": 7,
+                        "categories": ["headers"],
                         "evidence": ["header server: nginx"]}]
+
+
+class TestVerdictRanking:
+    """The FIRST verdict is what the summary table calls the edge, so it must
+    be the best-evidenced vendor — not merely the most-matched one."""
+
+    def test_ranked_by_confidence_not_signal_count(self):
+        # A Cloudflare netblock (30%, one signal) outranks a gateway matched
+        # by three headers (7%, three signals). Ranking by len(evidence)
+        # summarised such a host as "kong (7%)" and demoted the real edge.
+        r = _result(headers={"x-kong-upstream-latency": "3",
+                             "x-kong-proxy-latency": "1",
+                             "via": "kong/3.4.0"},
+                    ips=["104.18.1.79"])
+        ver = fingerprint(r)
+        assert ver[0]["vendor"] == "cloudflare"
+        assert ver[0]["confidence"] == 30
+        kong = next(m for m in ver if m["vendor"] == "kong")
+        assert kong["signals"] > ver[0]["signals"]  # more signals, still second
+
+    def test_categories_recorded_strongest_first(self):
+        r = _result(headers={"server": "cloudflare"}, ips=["104.18.1.79"])
+        cf = next(m for m in fingerprint(r) if m["vendor"] == "cloudflare")
+        assert cf["categories"] == ["netblock", "headers"]
+
+    def test_order_is_stable_for_equal_confidence(self):
+        r = _result(headers={"server": "nginx"})
+        assert [m["vendor"] for m in fingerprint(r)] == \
+               [m["vendor"] for m in fingerprint(r)]
 
     def test_confidence_capped_at_100(self):
         # A vendor with all six categories matched cannot exceed 100 even

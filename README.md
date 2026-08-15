@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.31
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.32
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -27,8 +27,21 @@ headers, cookies, certificate issuer/org, CNAME/PTR suffixes, IP netblocks)
 against a vendor signature table to **name the edge in front of the origin**.
 
 ```bash
-w4f --target api.example.com
+w4f --target-file hosts.txt
 ```
+
+```
+HOST                    EDGE        CONF  BASIS               TLS     CERT                 HTTP  NOTES
+api.example.com:443     imperva +1   62%  net+cert+hdr        1.3 h2  Imperva Inc 64d       403  mTLS  BLOCK imperva
+shop.example.net:443    cloudflare   82%  net+cert+cname+hdr  1.3 h2  SSL Corporati… 73d    200  ->www.shop.example.net
+origin.example.org:443  nginx         7%  hdr                 1.3 h2  Let's Encrypt 21d     200
+edge.example.io:443     unknown        -  -                   1.3 h2  GlobalSign nv… 161d   200
+```
+
+`BASIS` is the column that decides whether to believe the row: `net+cert`
+is ownership evidence, a bare `hdr` is a string the origin can set. Each
+host then gets a detail block and the sweep gets a rollup — see
+[Example output](#example-output).
 
 No attack payloads. Nothing is chain-validated the way a client trusts it —
 this is fingerprinting, not trusting — so self-signed and privately-pinned
@@ -133,7 +146,7 @@ python3 -m pytest           # run the test suite
 ### Verify & uninstall
 
 ```bash
-w4f --version        # e.g. "w4f 0.1.26 — passive TLS / CDN / WAF / edge fingerprinting"
+w4f --version        # e.g. "w4f 0.1.32 — passive TLS / CDN / WAF / edge fingerprinting"
 w4f --help           # full usage
 pipx uninstall w4f   # or: uv tool uninstall w4f / pip uninstall w4f
 ```
@@ -147,9 +160,16 @@ useful for scheduling, scripting, or building your own sweep tooling:
 from w4f import fingerprint_host
 
 r = fingerprint_host("api.example.com", verify=True)
-print(r["verdict"][0]["vendor"], r["verdict"][0]["confidence"])  # cloudflare 65
+top = r["verdict"][0]                         # ranked by confidence
+print(top["vendor"], top["confidence"])       # cloudflare 82
+print(top["categories"])                      # ['netblock', 'cert', 'cname', 'headers']
 print(r["block"]["vendor"] if r["block"] else "no WAF block")    # needs verify=True
 ```
+
+`verdict` is ranked by **confidence**, so `verdict[0]` is the best-evidenced
+vendor. `categories` (added 0.1.32) lists the signal kinds behind the score,
+strongest first — a verdict whose categories are only `headers`/`cookies`
+rests on strings the origin can set.
 
 Returns the same per-host dict the CLI's `--json` output contains (`host`,
 `hostport`, `port`, `resolved`, `tls`, `verdict`, `block`, `error`). Accepts
@@ -166,11 +186,11 @@ w4f --target api.example.com
 # several hosts, one pass
 w4f --target mapi.example.com --target api.example.net --target api.example.org
 
-# a non-443 port (the DATA socket banks use)
-w4f --target mbanking.example.co.id:6552
+# a non-443 port (API/data sockets often sit off 443)
+w4f --target api.example.net:6552
 
 # an IP literal (PTR is still resolved)
-w4f --target 34.206.8.44
+w4f --target 203.0.113.10
 
 # scan every subdomain from a subdomain-enumeration export
 w4f --target-json subdomains.json --json out.json --md out.md
@@ -225,22 +245,24 @@ w4f --target api.example.com --no-http
 | `--delay SECONDS` | base pacing between per-host submissions (default 0 = as fast as possible). Per-domain adaptive backoff: a `429`/`503` doubles that domain's delay (cap 10s), a success resets it to the base. |
 | `--json FILE` | write the full machine-readable result tree to FILE |
 | `--md FILE` | write a markdown sweep (table + per-host blocks) to FILE |
-| `--csv FILE` | write a flat CSV — one row per host, primary verdict: host, port, ips, cname, verdict, confidence, signals, mtls, tls_version, alpn, spki, http_status, block, error |
+| `--csv FILE` | write a flat CSV — one row per host, primary verdict: host, port, ips, cname, verdict, confidence, signals, mtls, tls_version, alpn, spki, http_status, block, error, basis, final_host |
 | `--sarif FILE` | write a SARIF 2.1.0 report for security dashboards / GitHub Code Scanning — one result per host, rule ids `w4f/<vendor>`, `w4f/block`, `w4f/mtls`, `w4f/probe-error`, `w4f/unknown-edge` |
-| `-v`, `--verbose` | show the FULL per-host detail (cert, SPKI, response headers, verdict evidence) instead of the compact triage view — the summary table prints either way |
+| `--sort risk\|host\|edge` | console ordering (default `risk`: errors, block pages, mTLS, unknown and header-only verdicts first). `host` = alphabetical, `edge` = grouped by vendor. File outputs are always host-sorted. |
+| `-v`, `--verbose` | show the FULL per-host detail (cert, SPKI, response headers, verdict evidence) instead of the triage view — the summary table prints either way |
 | `--no-http` | TLS/cert/DNS only, skip the HTTP request |
 | `--ws PATH` | **OPT-IN** — send an RFC 6455 WebSocket upgrade request to this path and report whether the edge answers `101` (plus `Sec-WebSocket-Accept`) |
 | `--grpc` | **OPT-IN** — send a `grpc.health.v1.Health/Check` request and report `grpc-status` / `grpc-message`, or the HTTP/2 binary-framing answer (real gRPC is h2; pairs with the ALPN observation) |
 | `--verify` | **OPT-IN active probe** — one benign `<script>` query per host; reports the WAF block page (FortiWeb / F5 ASM / Cloudflare / Imperva) |
 | `--version` | print version and exit |
-| `--quiet` | suppress ALL console output (banner, summary table, per-host blocks) — use with `--json`/`--md`/`--csv` for automation |
+| `--quiet` | suppress ALL console output (banner, summary table, per-host blocks, rollup) — use with `--json`/`--md`/`--csv` for automation |
 
 Targets may come from `--target`, `--target-json`, `--target-file`,
 `--target-csv`, or — when none of those is given and stdin is not a TTY —
 from stdin (one host per line). All sources go through the same validation
 (control chars / URI schemes / overlong names dropped with a warning) and
 are deduplicated after validation. Targets scan in
-parallel; results print sorted by host. Progress and file paths go to stderr,
+parallel; the console orders them by risk (`--sort`) while file outputs stay
+sorted by host for clean run-over-run diffs. Progress and file paths go to stderr,
 the report to stdout — so `w4f ... > report.txt` and `w4f ... --quiet --json
 out.json | jq ...` keep the machine output clean.
 
@@ -263,63 +285,104 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.31
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.32
 
-HOST                  EDGE       CONF  mTLS  BLOCK  ERR
-api.example.com:443   imperva     45%  YES   -      -
-shop.example.net:443  cloudflare 65%  -     -      -
-dead.example.io:443   unknown      -   -     -      DNS did not resolve
+HOST                    EDGE        CONF  BASIS               TLS     CERT                 HTTP  NOTES
+api.example.com:443     imperva +1   62%  net+cert+hdr        1.3 h2  Imperva Inc 64d       403  mTLS  BLOCK imperva
+shop.example.net:443    cloudflare   82%  net+cert+cname+hdr  1.3 h2  SSL Corporati… 73d    200  ->www.shop.example.net
+origin.example.org:443  nginx         7%  hdr                 1.3 h2  Let's Encrypt 21d     200
+edge.example.io:443     unknown        -  -                   1.3 h2  GlobalSign nv… 161d   200
+dead.example.io:443     -              -  -                   -       -                       -  ERR DNS did not resolve
 
-api.example.com:443   mTLS
-    imperva (2, 45%)
-    nginx (1, 7%)
+api.example.com:443  mTLS  BLOCK imperva
+  edge    imperva  62%  net+cert+hdr
+          header x-iinfo: 7-1234567-1234567 NNNN CT(1 1 0) · netblock: 203.0.113.10 in 203.0.113.0/24 · cert: Imperva Inc
+  stack   nginx  7%  hdr
+  path    403 · TLS1.3 h2
+  cert    Imperva Inc · 64d left · chain verified
+  pin     spki 343d1536f3666f92…
 
-shop.example.net:443
-    cloudflare (7, 65%)
-    nginx (1, 7%)
+shop.example.net:443  ->www.shop.example.net
+  edge    cloudflare  82%  net+cert+cname+hdr
+          header server: cloudflare · header cf-ray: 9a2b4f55b2f67d43-SIN · cname: shop.example.net.cdn.cloudflare.net · +1 more
+  path    -> www.shop.example.net (1 hop) · 200 · TLS1.3 h2
+  cert    SSL Corporation · 73d left · chain verified
+  pin     spki 0856752f53199a67…
 
-dead.example.io:443   ERR
-    no signature matched (unknown edge)
-    DNS did not resolve
+origin.example.org:443
+  edge    nginx  7%  hdr  (headers only — spoofable)
+          header server: nginx
+  path    200 · TLS1.3 h2
+  cert    Let's Encrypt · 21d left · chain verified
+  pin     spki 9c11885c885a00ab…
+
+edge.example.io:443
+  edge    unknown — no signature matched
+  leads   server: acme-edge · x-acme-pop: sin1 · x-acme-request-id
+  path    200 · TLS1.3 h2
+  cert    GlobalSign nv-sa · 161d left · chain verified
+  pin     spki a7adf62a1443f271…
+
+dead.example.io:443  ERR DNS did not resolve
+  error   DNS did not resolve
+
+── 5 hosts · 3.4s ──────────────────────────────────────────────────────
+edges     cloudflare 1 · imperva 1 · nginx 1
+unknown   1  (edge.example.io:443)
+flags     mTLS 1 · BLOCK 1 · errors 1
+weak      1 verdict rests on headers only (spoofable) — confirm with --verify
 ```
 
-Default mode is the **triage view**: a summary table of every host, then a
-compact block per host (host + critical flags + verdict). Add `-v` /
-`--verbose` for the FULL per-host detail (IPs, cert, SPKI pin, response
-headers, verdict evidence):
+Default mode is the **triage view**: a summary table of every host, a block
+per host with the facts the table has no room for, then a sweep rollup.
+
+`BASIS` is the column to read before trusting a verdict — it names the
+signal categories behind it (`net` netblock, `cert`, `cname`, `ptr`, `hdr`
+header, `cookie`). `net+cert` is ownership evidence; a bare `hdr` is a
+string the origin can set, which is why `origin.example.org` above is
+flagged *headers only — spoofable*. Hosts are ordered by risk
+(errors, block pages, mTLS, unknown, weak verdicts first) — `--sort host`
+restores alphabetical order, and file outputs are always host-sorted.
+
+An `unknown` host prints a `leads` line with the fingerprintable headers
+that matched **no** signature — that is the raw material for the next
+vendor file (an unknown verdict is a tool gap, not a result).
+
+Add `-v` / `--verbose` for the FULL per-host detail (IPs, cert chain, SPKI
+pin, redirect chain, response headers, complete verdict evidence):
 
 ```
 $ w4f -v --target shop.example.net:443
-HOST                  EDGE       CONF  mTLS  BLOCK  ERR
-shop.example.net:443  cloudflare 65%  -     -      -
 
 shop.example.net:443
-ip        104.18.1.79, 104.18.0.79, 2606:4700::6812:4f, 2606:4700::6812:14f
+ip        104.18.1.79
 cname     shop.example.net.cdn.cloudflare.net
 tls       TLSv1.3  TLS_AES_256_GCM_SHA384  ALPN h2
-  http2   negotiated h2; GET used HTTP/1.1 (header view is the 1.1 view)
-cert      Example CA, Inc.
+cert      SSL Corporation  (chain verified)
   san     shop.example.net, www.shop.example.net
-  valid   2026-05-27 -> 2026-12-11  (118d left)
-  spki    343d1536f3666f92ea868d751d138dd8658d3020426b4de28801cb259f5bdde7
+  valid   2026-06-05 -> 2026-12-11  (73d left)
+  spki    0856752f53199a67bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   key     RSA 2048  sha256WithRSAEncryption
-http      HTTP/1.1 404 Not Found
+http      HTTP/1.1 200 OK
+  chain   https://www.shop.example.net/
+  final   www.shop.example.net  (headers above are from here)
   hdr     server=cloudflare
+  hdr     cf-ray=9a2b4f55b2f67d43-SIN
   hdr     cf-cache-status=DYNAMIC
-  hdr     cf-ray=a2af62ede853e78f-CGK
-verdict   cloudflare (7, 65%): header server: cloudflare; header cf-ray: ...;
-          cookie: _cfuvid=...; cname: shop.example.net.cdn.cloudflare.net;
-          netblock: 104.18.1.79 in 104.16.0.0/13; netblock: 2606:4700::6812:4f in ...
+verdict   cloudflare (82%, net+cert+cname+hdr): header server: cloudflare; header cf-ray: 9a2b4f55b2f67d43-SIN; cname: shop.example.net.cdn.cloudflare.net; netblock: 104.18.1.79 in 104.16.0.0/13
 ```
 
+The `chain`/`final` rows matter more than they look: the apex is often a
+bare redirector and the WAF only sits on `www`, so they say which host the
+headers above actually describe.
+
 (The hosts above are illustrative — run it against any real host to see your
-own output. The full-block example is what `--verbose` shows; the triage
-view above is the default.)
+own output.)
 
 Colors are enabled automatically when stdout is a TTY (piped output is plain
 text), and disabled with `NO_COLOR`. The host line is cyan, **critical flags
-(mTLS / BLOCK / ERR) are bold bright red**, `--verify` block findings
-yellow — and each **vendor name has its own color** so a glance names the
+(mTLS / BLOCK / ERR) are bold bright red**, redirect markers and `--verify`
+block findings yellow — and each **vendor name has its own color** so a glance names the
 edge: Cloudflare bright-yellow, Akamai blue, Fastly red, AWS family cyan,
 Azure family bright-blue, Tencent family bright-magenta, Google GFE
 magenta, F5/netscaler bright-red, FortiWeb bright-yellow, Kong bright-cyan,
@@ -340,27 +403,51 @@ an entry there if it deserves its own hue.
 | HTTP status + interesting headers | one GET |
 | WebSocket upgrade support (`--ws`) | RFC 6455 upgrade request |
 | gRPC health-check support (`--grpc`) | grpc.health.v1.Health/Check |
-| CDN/WAF verdict + matching evidence + confidence | signature match |
+| redirect chain + final host (apex → www) | one GET, up to 5 hops |
+| CDN/WAF verdict + matching evidence + confidence + signal categories | signature match |
 | `block` — WAF block page (vendor, title, status) | `--verify` active probe |
 
 ## Reading a verdict
 
-Vendor names are matched with weights: a host behind nginx directly gets
-`nginx` only; a host behind Imperva gets `imperva` from headers **and** cert
-**and** netblock, each signal listed as evidence with a count and a
-confidence percentage (`imperva (2, 45%)`). The top match is the one with
-the most evidence.
+A host behind nginx directly gets `nginx` only; a host behind Imperva gets
+`imperva` from headers **and** cert **and** netblock, every matching signal
+listed as evidence:
 
-Every match carries a **confidence (0–100)** from weighted signal
-categories (netblock 30, cert issuer 25, CNAME 20, PTR 15, headers 7,
-cookies 3 — each category counted once, per-vendor `weights` overrides
-allowed). High confidence = almost certainly that vendor; a single weak
-header (`nginx` alone = 7) is a hint, not a verdict. See
-[`docs/vendor-signatures.md`](docs/vendor-signatures.md) for the full
-weight table and the "why" behind each signal.
+```
+imperva (62%, net+cert+hdr): header x-iinfo: 7-1234567-…; netblock: … ; cert: Imperva Inc
+```
+
+Every match carries a **confidence (0–100)** summed from weighted signal
+categories, **each category counted once**:
+
+| category | weight | why |
+|---|---|---|
+| `net` netblock | 30 | IP ownership is hard to spoof |
+| `cert` issuer | 25 | cert issuance is authoritative |
+| `cname` chain | 20 | DNS delegation is deliberate |
+| `ptr` record | 15 | real evidence, but often generic or missing |
+| `hdr` headers | 7 | weak alone — anyone can set a `Server:` header |
+| `cookie` cookies | 3 | weakest — trivially fabricated |
+
+Because each category counts once, **the percentage is not a probability and
+signal count is not confidence**: six matching headers still score 7, while
+one netblock hit scores 30. That is why the category list (`BASIS` in the
+table, `categories` in the JSON) is the part to read — it says whether a
+verdict rests on evidence the origin cannot fabricate. A verdict built only
+from `hdr`/`cookie` is marked *headers only — spoofable*.
+
+**Verdicts are ranked by confidence**, so `verdict[0]` — the vendor the
+table, `--csv` and SARIF call the edge — is the best-evidenced one. A second
+entry is usually the origin behind that edge (`imperva` in front of
+`nginx`), shown as `+1` in the table and on a `stack` line in the block.
+Per-vendor `weights` overrides are allowed; see
+[`docs/vendor-signatures.md`](docs/vendor-signatures.md) for the full table
+and the "why" behind each signal.
 
 - **A blank verdict** means the edge is not in the signature table — treat it
-  as "unknown origin, no WAF/CDN signature", **not** "no WAF".
+  as "unknown origin, no WAF/CDN signature", **not** "no WAF". The block
+  prints a `leads` line with the fingerprintable headers that matched
+  nothing, which is where a new signature starts.
 - **A passive "direct nginx" verdict is NOT proof of a bare origin.** FortiWeb
   and F5 ASM serve plain nginx to normal requests; run `--verify` before
   concluding the origin is exposed.
@@ -401,7 +488,7 @@ serves plain nginx to normal requests). See
 
 ### Signature coverage
 
-**92 vendors** across six families — each one a file under
+**93 vendors** across six families — each one a file under
 `w4f/signatures/` (copy `_template.py` to add one; see
 [`docs/vendor-signatures.md`](docs/vendor-signatures.md) for the
 contributor guide):
@@ -426,8 +513,9 @@ contributor guide):
   OpenResty, Cloudflare Workers, Vercel, Google Cloud Run, AWS App Runner,
   SGW (Shopee/Sea), **WSO2** (API Manager / Carbon gateway).
 - **Plain origins** (6): nginx, Apache, IIS, Caddy, LiteSpeed, Varnish.
-- **Platforms** (5): Google GFE, Wix Pepyaka, Squarespace, Azure App
-  Service, ByteDance TLB.
+- **Platforms** (6): Google GFE, Wix Pepyaka, Squarespace, Azure App
+  Service, ByteDance TLB, **WordPress VIP** (`x-rq` POP header +
+  `go-vip.net` CNAME).
 
 Plus `--verify` block-page signatures for FortiWeb (EN + localized ID),
 F5 ASM, Cloudflare, Imperva and **AWS WAF** ("ERROR: The request could not
@@ -455,15 +543,18 @@ errors are a field, not an exception — a bad host never aborts the run:
       "mtls": false,
       "chain_verified": true,
       "cert": { "subject": "CN=api.example.com", "issuer": "O=Cloudflare, Inc.", "issuer_org": "Cloudflare, Inc.", "spki_sha256": "343d1536...", "key_type": "RSA", "key_size": 2048, "days_remaining": 118 },
-      "http": { "status": "HTTP/1.1 404 Not Found", "headers": { "server": "cloudflare", "cf-ray": "a2af..." }, "set-cookie-list": [] }
+      "http": { "status": "HTTP/1.1 404 Not Found", "headers": { "server": "cloudflare", "cf-ray": "a2af..." }, "set-cookie-list": [], "redirects": [], "final_host": "api.example.com" }
     },
     "verdict": [
-      { "vendor": "cloudflare", "signals": 7, "confidence": 65, "evidence": ["header server: cloudflare", "cname: api.example.com.cdn.cloudflare.net", ...] }
+      { "vendor": "cloudflare", "signals": 7, "confidence": 82, "categories": ["netblock", "cert", "cname", "headers"], "evidence": ["header server: cloudflare", "cname: api.example.com.cdn.cloudflare.net", ...] }
     ],
     "block": null
   }
 ]
 ```
+
+`verdict` is ordered by confidence (best-evidenced first). `categories` is
+strongest-first and is what the console renders as `BASIS`.
 
 ### Scripting
 
@@ -480,6 +571,13 @@ jq -r '.[] | select(.block) | "\(.hostport)\t\(.block.vendor)"' out.json
 
 # fail if any host errored (exit code already does this, but jq can too)
 jq -e '[.[] | select(.error)] | length == 0' out.json > /dev/null
+
+# verdicts resting only on spoofable headers/cookies — re-check these
+jq -r '.[] | select((.verdict | length) > 0 and (.verdict[0].categories | inside(["headers","cookies"])))
+       | "\(.hostport)\t\(.verdict[0].vendor)"' out.json
+
+# unknown edges: the queue for the next signature file
+jq -r '.[] | select(.error == null and (.verdict | length) == 0) | .hostport' out.json
 
 # SPKI-SHA-256 pin values for every host
 jq -r '.[] | "\(.hostport)\t\(.tls.cert.spki_sha256)"' out.json
@@ -500,18 +598,21 @@ pip install .[dev]
 python -m pytest
 ```
 
-204 tests, offline — a local TLS server with a self-signed cert exercises the
+287 tests, offline — a local TLS server with a self-signed cert exercises the
 real socket path without touching the internet. Coverage: fingerprint
-matching against real-world cases from the Indonesian bank sweep +
-false-positive guards (requires-gate positives/negatives, Cloudflare-WAF
-low-confidence, fastly cache-node vs marketing-site, Jakarta CloudFront
-netblock); the `--verify` block-page matcher (FortiWeb EN/ID, F5 ASM,
+matching against real-world cases from live sweep corpora + false-positive
+guards (requires-gate positives/negatives, Cloudflare-WAF low-confidence,
+fastly cache-node vs marketing-site, regional CloudFront
+netblocks); confidence-first verdict ranking; the `--verify` block-page
+matcher (FortiWeb EN/ID, F5 ASM,
 Cloudflare, Imperva, AWS WAF, Akamai Kona, the title-at-end-of-39KB-body
 trap); the modular signature loader (package discovery, nested subpackages,
 duplicate-name / bad-regex / missing-name / unknown-key / bad-netblock
 rejection, `W4F_SIGNATURES` env override); rate limiting; WS/gRPC probes;
-SARIF schema shape; CSV/JSON/MD writers; CLI/report/banner (incl. per-vendor
-verdict colors); and end-to-end `probe_one` against the local server.
+SARIF schema shape; CSV/JSON/MD writers; CLI/report/banner (summary-table
+columns and alignment under color, triage-block facts, unknown-edge leads,
+sweep rollup, display ordering, per-vendor verdict colors); and end-to-end
+`probe_one` against the local server.
 
 CI (GitHub Actions) runs the suite on Python 3.10/3.11/3.12 with full extras,
 a no-optional-deps job proving graceful degradation, and a CLI smoke check.

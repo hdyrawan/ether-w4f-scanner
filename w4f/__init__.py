@@ -9,7 +9,7 @@ Public API:
 
 from __future__ import annotations
 
-__version__ = "0.1.31"
+__version__ = "0.1.32"
 
 __all__ = ["fingerprint_host"]
 
@@ -23,7 +23,8 @@ def fingerprint_host(host: str, port: int = 443, timeout: float = 8.0,
     Runs the same probe the CLI runs (DNS, one SNI TLS handshake, one GET,
     optional opt-in probes) and returns the same per-host dict the ``--json``
     output contains: ``host``, ``hostport``, ``port``, ``resolved``, ``tls``,
-    ``verdict`` (list of vendor matches with confidence), ``block`` (when
+    ``verdict`` (vendor matches ranked by confidence, each with
+    ``categories`` naming the signal kinds behind it), ``block`` (when
     ``verify=True`` finds a WAF block page), and ``error`` (never raises for
     scan failures — a bad host is a field, not an exception).
 

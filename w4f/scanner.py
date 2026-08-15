@@ -378,6 +378,11 @@ CONF_WEIGHTS = {
     "cookies": 3,    # weakest — easily fabricated
 }
 
+# Signal categories strongest-first — the order verdict['categories'] is
+# reported in, so a reader sees what the verdict actually rests on
+# ("netblock+cert" is hard evidence, "headers" alone is spoofable).
+CONF_CATEGORY_ORDER = ["netblock", "cert", "cname", "ptr", "headers", "cookies"]
+
 
 def fingerprint(result: dict) -> list[dict]:
     """Ranked vendor matches with the signals that matched.
@@ -464,9 +469,18 @@ def fingerprint(result: dict) -> list[dict]:
             weights = {**CONF_WEIGHTS, **(rules.get("weights") or {})}
             conf = sum(weights.get(c, 0) for c in cats)
             matches.append({"vendor": name, "signals": len(evidence),
-                            "confidence": min(conf, 100), "evidence": evidence})
+                            "confidence": min(conf, 100),
+                            "categories": [c for c in CONF_CATEGORY_ORDER
+                                           if c in cats],
+                            "evidence": evidence})
 
-    matches.sort(key=lambda m: -m["signals"])
+    # Rank by CONFIDENCE, not evidence count. Ranking by len(evidence) let a
+    # vendor matched only by several headers (all one category, 7% total)
+    # outrank one proven by a netblock (30%) — so a Cloudflare-fronted host
+    # running a Kong gateway summarised as "kong (7%)" with cloudflare
+    # demoted to a secondary line. Signal count breaks ties, then the name
+    # so the order is stable across runs.
+    matches.sort(key=lambda m: (-m["confidence"], -m["signals"], m["vendor"]))
     return matches
 
 

@@ -12,7 +12,7 @@ import time
 
 from w4f import __version__
 from w4f.banner import BANNER
-from w4f.report import (csv_doc, fmt_block, fmt_compact_block,
+from w4f.report import (csv_doc, fmt_block, fmt_compact_block, fmt_rollup,
                         fmt_summary_table, md_doc, sarif_doc)
 from w4f.scanner import probe_one
 
@@ -208,6 +208,39 @@ def _load_targets_from_csv(path: str) -> list[str]:
     return hosts
 
 
+def _risk_rank(r: dict) -> int:
+    """Triage order: the hosts that need a human come first.
+
+    error → block page → mTLS → unknown edge → header-only (spoofable)
+    verdict → everything confidently identified.
+    """
+    from w4f.report import _is_weak
+    if r.get("error"):
+        return 0
+    if r.get("block"):
+        return 1
+    if (r.get("tls") or {}).get("mtls"):
+        return 2
+    ver = r.get("verdict") or []
+    if not ver:
+        return 3
+    if _is_weak(ver[0]):
+        return 4
+    return 5
+
+
+def display_order(results: list[dict], mode: str) -> list[dict]:
+    """Console ordering ONLY — the machine outputs (--json/--md/--csv/--sarif)
+    stay sorted by hostport so a sweep's files diff cleanly run over run.
+    """
+    if mode == "host":
+        return sorted(results, key=lambda r: r["hostport"])
+    if mode == "edge":
+        return sorted(results, key=lambda r: (
+            (r.get("verdict") or [{}])[0].get("vendor", "~unknown"), r["hostport"]))
+    return sorted(results, key=lambda r: (_risk_rank(r), r["hostport"]))
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="w4f",
@@ -271,6 +304,11 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--quiet", action="store_true",
                     help="suppress ALL console output (banner, summary table, "
                          "per-host blocks — useful with --json/--md/--csv)")
+    ap.add_argument("--sort", choices=("risk", "host", "edge"), default="risk",
+                    help="console ordering: risk (default — errors, block "
+                         "pages, mTLS, unknown and header-only verdicts "
+                         "first), host (alphabetical), or edge (grouped by "
+                         "vendor). File outputs are always host-sorted.")
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="show the FULL per-host detail (cert, SPKI, response "
                          "headers, verdict evidence) instead of the compact "
@@ -320,6 +358,7 @@ def main(argv: list[str] | None = None) -> int:
     results = []
     throttle = Throttle(args.delay)
     total = len(targets)
+    started = time.monotonic()
     show_progress = (not args.quiet) and total > 1
     if show_progress:
         sys.stderr.write(f"\r[0/{total}] scanning...")
@@ -352,16 +391,23 @@ def main(argv: list[str] | None = None) -> int:
     if show_progress:
         sys.stderr.write("\r\033[K")  # clear the progress line
         sys.stderr.flush()
+    elapsed = time.monotonic() - started
+    # file outputs stay host-sorted for clean run-over-run diffs; the console
+    # gets its own (default risk-first) ordering
     results.sort(key=lambda r: r["hostport"])
 
     if not args.quiet:
+        shown = display_order(results, args.sort)
         print(BANNER)
         print(f"  {_TAGLINE}   v{__version__}")
         print()
-        print(fmt_summary_table(results))
+        print(fmt_summary_table(shown))
         print()
-        for r in results:
+        for r in shown:
             print(fmt_block(r) if args.verbose else fmt_compact_block(r))
+            print()
+        if len(results) > 1:
+            print(fmt_rollup(results, elapsed))
             print()
 
     if args.json:

@@ -121,11 +121,45 @@ def _row(label: str, value: str) -> str:
     return f"{label:<{_LABEL}}{value}"
 
 
+def _row2(label: str, value: str) -> str:
+    """Indented label/value row for the triage block — the 2-space indent plus
+    an 8-wide label keeps values in the same column as :func:`_row`."""
+    return f"  {label:<8}{value}"
+
+
+# Signal-category abbreviations for the "basis" cell. WHAT a verdict rests on
+# is more actionable than the percentage those categories sum to: "net+cert"
+# is ownership evidence, "hdr" alone is a string anyone can set.
+_CAT_ABBR = {
+    "netblock": "net", "cert": "cert", "cname": "cname",
+    "ptr": "ptr", "headers": "hdr", "cookies": "cookie",
+}
+# Categories the origin cannot fake by echoing a header.
+_HARD_CATS = {"netblock", "cert", "cname", "ptr"}
+
+
+def _basis(m: dict) -> str:
+    """``"net+cert+hdr"`` — the signal categories behind one verdict.
+
+    Result trees written before 0.1.32 carry no ``categories`` key; those
+    render as ``-`` instead of raising (``--json`` files are re-read by the
+    sweep harness).
+    """
+    cats = m.get("categories") or []
+    return "+".join(_CAT_ABBR.get(c, c) for c in cats) or "-"
+
+
+def _is_weak(m: dict) -> bool:
+    """True when a verdict rests ONLY on headers/cookies (spoofable)."""
+    cats = set(m.get("categories") or [])
+    return bool(cats) and not (cats & _HARD_CATS)
+
+
 def fmt_verdict(verdict: list[dict]) -> str:
     if not verdict:
         return "unknown-edge (no signature matched)"
     return ", ".join(
-        f"{m['vendor']}({m['signals']}, {m.get('confidence', 0)}%)" for m in verdict
+        f"{m['vendor']}({m.get('confidence', 0)}%, {_basis(m)})" for m in verdict
     )
 
 
@@ -138,7 +172,7 @@ def _verdict_line(ver: list[dict]) -> str:
     for i, m in enumerate(ver):
         ev = "; ".join(m["evidence"])
         color = _vendor_color(m["vendor"])
-        counts = _wrap(f"({m['signals']}, {m.get('confidence', 0)}%)", _DIM)
+        counts = _wrap(f"({m.get('confidence', 0)}%, {_basis(m)})", _DIM)
         if i == 0:
             name = _wrap(m["vendor"], _BOLD + color) if color else _wrap(m["vendor"], _BOLD)
             lines.append(_row("verdict", f"{name} {counts}: {ev}"))
@@ -177,9 +211,22 @@ def fmt_block(r: dict) -> str:
     if tls.get("mtls"):
         lines.append(_row("mtls", _wrap("server wants a CLIENT certificate", _RED)))
     if cert.get("subject"):
-        subj = cert.get("subject") or ""
-        lines.append(_row("cert", f"{cert.get('issuer_org') or cert.get('issuer')}"))
-        lines.append(_row("  san", cert.get("san") or "-"))
+        issuer = f"{cert.get('issuer_org') or cert.get('issuer')}"
+        # chain trust is evidence too — the scanner records it but the
+        # console never showed it (only --json did).
+        cv = r.get("chain_verified")
+        if cv is True:
+            issuer += _wrap("  (chain verified)", _DIM)
+        elif cv is False:
+            issuer += _wrap("  (chain NOT verified)", _YELLOW)
+        lines.append(_row("cert", issuer))
+        # a wildcard cert can carry 50+ SANs — that one line used to bury the
+        # whole block; the full list stays in --json
+        sans = [s.strip() for s in (cert.get("san") or "").split(",") if s.strip()]
+        san_line = ", ".join(sans[:6]) if sans else "-"
+        if len(sans) > 6:
+            san_line += f"  (+{len(sans) - 6} more)"
+        lines.append(_row("  san", san_line))
     if cert.get("days_remaining") is not None:
         lines.append(
             _row(
@@ -222,11 +269,26 @@ def fmt_block(r: dict) -> str:
         if status.startswith("ERROR:"):
             status = re.sub(r"\s*\(_ssl\.c:\d+\)$", "", status)
         lines.append(_row("http", status[:90]))
+        # The redirect chain decides WHICH host the headers above describe:
+        # the apex is often a bare redirector and the WAF only sits on www.
+        # Recorded since 0.1.10, shown nowhere until 0.1.32.
+        if http.get("redirects"):
+            hops = http["redirects"]
+            chain = " -> ".join(h[:60] for h in hops[:3])
+            if len(hops) > 3:
+                chain += f" -> (+{len(hops) - 3} more)"
+            lines.append(_row("  chain", _wrap(chain, _YELLOW)))
+            lines.append(_row("  final", f"{http.get('final_host') or '-'}"
+                                         f"  (headers above are from here)"))
         interesting = []
         for h, v in (http.get("headers") or {}).items():
             if any(re.match(hp, h) for hp in INTERESTING_HEADERS):
                 interesting.append(f"{h}={v[:70]}")
         if interesting:
+            # vendor-ish headers first: the list is capped at 8, and generic
+            # security headers (HSTS/CSP/X-Frame-Options) used to push the
+            # actual fingerprint (server, via, x-cache) off the end
+            interesting.sort(key=lambda hv: hv.split("=", 1)[0].lower() in _LEAD_NOISE)
             # one header per line so long cookies/server strings don't wrap ugly
             for hdr in interesting[:8]:
                 lines.append(_row("  hdr", hdr))
@@ -245,90 +307,368 @@ def fmt_block(r: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Triage view (default): summary table + compact per-host blocks.
+# Triage view (default): summary table + per-host blocks + sweep rollup.
 # ---------------------------------------------------------------------------
 
 
-def _flags(r: dict) -> list[str]:
-    """Critical flags: mTLS / BLOCK / ERR, styled aggressively."""
-    flags = []
+def _term_width() -> int | None:
+    """Terminal width for adaptive columns, or None when output is piped.
+
+    Piped output NEVER drops columns — a redirected sweep must be complete
+    and identical regardless of the terminal that happened to produce it.
+    """
+    import shutil
+    import sys
+    try:
+        if not sys.stdout.isatty():
+            return None
+    except Exception:
+        return None
+    return shutil.get_terminal_size((100, 24)).columns
+
+
+def _pad(colored: str, plain: str, width: int, align: str = "<") -> str:
+    """Pad a possibly-colored cell to `width` using its PLAIN length.
+
+    Padding inside the ANSI escape would make str.ljust count the escape
+    bytes and break every column to the right.
+    """
+    fill = " " * max(0, width - len(plain))
+    return colored + fill if align == "<" else fill + colored
+
+
+def _flag_tokens(r: dict) -> list[tuple[str, str]]:
+    """(text, color) for each critical flag — one source of truth for the
+    table's NOTES column and the per-host block header."""
     tls = r.get("tls") or {}
+    http = tls.get("http") or {}
+    out: list[tuple[str, str]] = []
     if tls.get("mtls"):
-        flags.append(_wrap("mTLS", _CRIT))
+        out.append(("mTLS", _CRIT))
     if r.get("block"):
-        blk = r["block"]
-        flags.append(_wrap(f"BLOCK {blk.get('vendor', '')}".rstrip(), _CRIT))
+        out.append((f"BLOCK {r['block'].get('vendor', '')}".rstrip(), _CRIT))
     if r.get("error"):
-        flags.append(_wrap("ERR", _CRIT))
-    return flags
+        out.append((f"ERR {r['error']}".rstrip(), _CRIT))
+    if http.get("redirects"):
+        final = (http.get("final_host") or "").strip()
+        out.append((f"->{final}" if final else "->redirect", _YELLOW))
+    return out
+
+
+def _flags(r: dict) -> list[str]:
+    """Critical flags: mTLS / BLOCK / ERR / redirect, styled aggressively."""
+    return [_wrap(t, c) for t, c in _flag_tokens(r)]
+
+
+def _status_code(r: dict) -> str:
+    """Bare HTTP status code for the table ("200"/"403"/"ERR"/"-")."""
+    status = ((r.get("tls") or {}).get("http") or {}).get("status") or ""
+    if not status:
+        return "-"
+    if status.startswith("ERROR"):
+        return "ERR"
+    m = re.search(r"\s(\d{3})(\s|$)", status)
+    return m.group(1) if m else "-"
+
+
+def _tls_cell(r: dict) -> str:
+    tls = r.get("tls") or {}
+    ver = (tls.get("tls_version") or "").replace("TLSv", "")
+    if not ver:
+        return "-"
+    return f"{ver} {tls.get('alpn') or ''}".strip()
+
+
+def _cert_cell(r: dict) -> str:
+    """Issuer org + days remaining — cert identity is fingerprint evidence
+    and an expiry cliff is worth seeing in a sweep."""
+    cert = (r.get("tls") or {}).get("cert") or r.get("cert") or {}
+    org = str(cert.get("issuer_org") or cert.get("issuer") or "").strip()
+    org = org.split(",")[0]
+    # mark the cut so a clipped CA name reads as clipped, not as a CA called
+    # "Sectigo Limite"; the block below prints the full issuer
+    if len(org) > 14:
+        org = org[:13] + "…"
+    days = cert.get("days_remaining")
+    if days is None:
+        return org or "-"
+    return f"{org} {days}d".strip()
+
+
+# Columns dropped (right to left) when the terminal is too narrow. CERT goes
+# first because the block below repeats it; BASIS survives longest because it
+# is the column that says whether a verdict can be trusted.
+_TABLE_DROP_ORDER = ["cert", "http", "tls", "basis"]
+_TABLE_COLS = [
+    ("HOST", "host", "<"), ("EDGE", "edge", "<"), ("CONF", "conf", ">"),
+    ("BASIS", "basis", "<"), ("TLS", "tls", "<"), ("CERT", "cert", "<"),
+    ("HTTP", "http", ">"), ("NOTES", "notes", "<"),
+]
 
 
 def fmt_summary_table(results: list[dict]) -> str:
-    """Compact all-hosts table: Host | Edge | Conf | mTLS | Block | Err.
+    """All-hosts table: HOST | EDGE | CONF | BASIS | TLS | CERT | HTTP | NOTES.
 
     Plain aligned text (no markdown); the edge is colored per-vendor and
     critical flags are bold red so a 20-50 host run scans in one glance.
+    BASIS names the signal categories the verdict rests on (net/cert/cname/
+    ptr/hdr/cookie) — "net+cert" is ownership evidence, a bare "hdr" is a
+    string the origin can set, and that difference matters more than the
+    percentage. Columns drop right-to-left on a narrow TTY; piped output
+    always carries the full set.
     """
     if not results:
         return ""
-    plain = []  # (host, edge, conf, mtls, block, err) — plain for width math
+    plain: list[dict[str, str]] = []
     for r in results:
         ver = r.get("verdict") or []
-        if ver:
-            edge = ver[0]["vendor"]
-            conf = f"{ver[0].get('confidence', 0)}%"
-        else:
-            edge = "unknown"
-            conf = "-"
-        tls = r.get("tls") or {}
-        err = r.get("error") or "-"
-        if len(err) > 36:
-            err = err[:33] + "..."
-        plain.append((r["hostport"], edge, conf,
-                      "YES" if tls.get("mtls") else "-",
-                      "BLOCK" if r.get("block") else "-",
-                      err))
-    hw = max(len(p[0]) for p in plain)
-    ew = max(len(p[1]) for p in plain)
-    header = (f"{'HOST':<{hw}}  {'EDGE':<{ew}}  {'CONF':>5}  "
-              f"mTLS  BLOCK  ERR")
-    rows = [header]
-    for r, (host, edge, conf, mtls, blk, err) in zip(results, plain):
+        top = ver[0] if ver else {}
+        # a host that failed to probe has no edge to report — "unknown" would
+        # claim we looked and found nothing
+        edge = "-" if r.get("error") else (top.get("vendor", "unknown") if ver
+                                           else "unknown")
+        if ver and len(ver) > 1:
+            edge += f" +{len(ver) - 1}"
+        notes = " ".join(t for t, _ in _flag_tokens(r))
+        if len(notes) > 44:
+            notes = notes[:41] + "..."
+        plain.append({
+            "host": r["hostport"],
+            "edge": edge,
+            "conf": f"{top.get('confidence', 0)}%" if ver else "-",
+            "basis": _basis(top) if ver else "-",
+            "tls": _tls_cell(r),
+            "cert": _cert_cell(r),
+            "http": _status_code(r),
+            "notes": notes,
+        })
+
+    widths = {key: max(len(head), max(len(p[key]) for p in plain))
+              for head, key, _ in _TABLE_COLS}
+    dropped: set[str] = set()
+    term = _term_width()
+    if term:
+        def total() -> int:
+            keys = [k for _, k, _ in _TABLE_COLS if k not in dropped]
+            return sum(widths[k] for k in keys) + 2 * (len(keys) - 1)
+        for key in _TABLE_DROP_ORDER:
+            if total() <= term:
+                break
+            dropped.add(key)
+
+    kept = [c for c in _TABLE_COLS if c[1] not in dropped]
+    rows = ["  ".join(_pad(h, h, widths[k], a) for h, k, a in kept).rstrip()]
+    for r, cells in zip(results, plain):
         ver = r.get("verdict") or []
-        edge_color = _vendor_color(ver[0]["vendor"]) if ver else _DIM
-        host_cell = _wrap(host.ljust(hw), _CYAN)
-        edge_cell = _wrap(edge.ljust(ew), edge_color) if edge_color else edge.ljust(ew)
-        mtls_cell = _wrap(mtls.ljust(4), _CRIT) if mtls != "-" else mtls.ljust(4)
-        blk_cell = _wrap(blk.ljust(5), _CRIT) if blk != "-" else blk.ljust(5)
-        err_cell = _wrap(err, _CRIT) if err != "-" else err
-        rows.append(f"{host_cell}  {edge_cell}  {conf:>5}  "
-                    f"{mtls_cell}  {blk_cell}  {err_cell}")
+        out = []
+        for _, key, align in kept:
+            val = cells[key]
+            if key == "host":
+                cell = _wrap(val, _CYAN)
+            elif key == "edge":
+                cell = _wrap(val, _BOLD + _vendor_color(ver[0]["vendor"])) if ver \
+                    else _wrap(val, _DIM)
+            elif key == "basis":
+                cell = _wrap(val, _DIM if not (ver and _is_weak(ver[0])) else _YELLOW)
+            elif key == "notes":
+                cell = "  ".join(_wrap(t, c) for t, c in _flag_tokens(r))
+                if len(val) > 44:  # was truncated for width math
+                    cell = _wrap(val, _CRIT)
+            else:
+                cell = val
+            out.append(_pad(cell, val, widths[key], align))
+        rows.append("  ".join(out).rstrip())
     return "\n".join(rows)
 
 
+# Response headers that say nothing about the edge — excluded from the
+# "leads" line so an unknown verdict shows only fingerprintable material.
+_LEAD_NOISE = {
+    "strict-transport-security", "x-frame-options", "content-security-policy",
+    "x-content-type-options", "x-xss-protection", "referrer-policy",
+    "x-download-options", "x-permitted-cross-domain-policies",
+    "x-ua-compatible", "x-dns-prefetch-control",
+}
+# Headers whose VALUE is the fingerprint ("server: acme-edge"), so it is kept
+# however long; everything else keeps the value only when it is short.
+_LEAD_VALUE_HEADERS = {"server", "via", "x-powered-by", "x-cdn", "x-cache",
+                       "x-served-by"}
+
+
+def _unmatched_leads(r: dict, limit: int = 4) -> str:
+    """Fingerprintable headers/cookies present on an UNKNOWN edge.
+
+    AGENTS.md trap #7: an unknown verdict is a tool gap to fix, not a result
+    to accept. Printing the vendor-ish headers that matched nothing turns
+    every unknown host in a sweep into the lead for the next signature file.
+    """
+    http = (r.get("tls") or {}).get("http") or {}
+    leads: list[str] = []
+    for h, v in (http.get("headers") or {}).items():
+        hl = h.lower()
+        if hl in _LEAD_NOISE:
+            continue
+        if hl in ("server", "via", "x-powered-by") or hl.startswith("x-"):
+            # A per-request id (x-…-request-id: 2C13:3DAD0C:…) is noise — its
+            # NAME is the signal a rule would match on. Keep short values,
+            # which is what distinguishes a POP/region marker.
+            if v and (hl in _LEAD_VALUE_HEADERS or len(v) <= 16):
+                leads.append(f"{h}: {v}")
+            else:
+                leads.append(h)
+    for c in (http.get("set-cookie-list") or [])[:2]:
+        leads.append(f"cookie {c.split('=', 1)[0]}")
+    if not leads:
+        return ""
+    shown = " · ".join(leads[:limit])
+    if len(leads) > limit:
+        shown += f" · +{len(leads) - limit} more"
+    return shown
+
+
+def _evidence_summary(m: dict, limit: int = 3) -> str:
+    ev = m.get("evidence") or []
+    shown = " · ".join(e[:56] for e in ev[:limit])
+    if len(ev) > limit:
+        shown += f" · +{len(ev) - limit} more"
+    return shown
+
+
 def fmt_compact_block(r: dict) -> str:
-    """Triage view per host: host + critical flags + verdict (primary
-    highlighted, secondary/origin vendors dimmed). No cert/headers detail —
-    that lives behind --verbose (fmt_block)."""
+    """Per-host triage block — the facts the table has no room for.
+
+    Deliberately NOT a restatement of the table row: it carries the evidence
+    behind the verdict, the layer stack (edge in front of origin), the
+    redirect chain that decides which host answered, cert identity, the pin
+    value, and — for an unknown edge — the headers that matched nothing.
+    Full headers and full evidence stay behind --verbose (fmt_block).
+    """
     head = _wrap(r["hostport"], _CYAN)
     flags = _flags(r)
     if flags:
         head += "  " + "  ".join(flags)
     lines = [head]
-    ver = r.get("verdict") or []
-    if ver:
-        for i, m in enumerate(ver):
-            counts = _wrap(f"({m['signals']}, {m.get('confidence', 0)}%)", _DIM)
-            color = _vendor_color(m["vendor"])
-            if i == 0:
-                name = _wrap(m["vendor"], _BOLD + color) if color else _wrap(m["vendor"], _BOLD)
-            else:
-                name = _wrap(m["vendor"], _DIM)
-            lines.append(f"    {name} {counts}")
-    else:
-        lines.append(_row("    ", _wrap("no signature matched (unknown edge)", _DIM)))
+
     if r.get("error"):
-        lines.append(_row("    ", _wrap(r["error"][:100], _CRIT)))
+        lines.append(_row2("error", _wrap(r["error"][:100], _CRIT)))
+        return "\n".join(lines)
+
+    ver = r.get("verdict") or []
+    tls = r.get("tls") or {}
+    http = tls.get("http") or {}
+    cert = tls.get("cert") or {}
+
+    if ver:
+        top = ver[0]
+        color = _vendor_color(top["vendor"])
+        name = _wrap(top["vendor"], _BOLD + color) if color else _wrap(top["vendor"], _BOLD)
+        detail = f"{top.get('confidence', 0)}%  {_basis(top)}"
+        if _is_weak(top):
+            detail += _wrap("  (headers only — spoofable)", _YELLOW)
+        lines.append(_row2("edge", f"{name}  {detail}"))
+        ev = _evidence_summary(top)
+        if ev:
+            lines.append(_row2("", _wrap(ev, _DIM)))
+        for m in ver[1:]:
+            lines.append(_row2("stack", _wrap(
+                f"{m['vendor']}  {m.get('confidence', 0)}%  {_basis(m)}", _DIM)))
+    else:
+        lines.append(_row2("edge", _wrap("unknown — no signature matched", _DIM)))
+        leads = _unmatched_leads(r)
+        if leads:
+            lines.append(_row2("leads", _wrap(leads, _YELLOW)))
+
+    # what answered, and over what
+    chain_bits = []
+    if http.get("redirects"):
+        hops = len(http["redirects"])
+        chain_bits.append(f"-> {http.get('final_host') or '?'} ({hops} hop"
+                          f"{'s' if hops > 1 else ''})")
+    status = _status_code(r)
+    if status != "-":
+        chain_bits.append(status)
+    if _tls_cell(r) != "-":
+        chain_bits.append(f"TLS{_tls_cell(r)}")
+    if chain_bits:
+        lines.append(_row2("path", " · ".join(chain_bits)))
+
+    cert_bits = []
+    issuer = str(cert.get("issuer_org") or cert.get("issuer") or "").split(",")[0]
+    if issuer:
+        cert_bits.append(issuer)
+    if cert.get("days_remaining") is not None:
+        cert_bits.append(f"{cert['days_remaining']}d left")
+    cv = r.get("chain_verified")
+    if cv is True:
+        cert_bits.append("chain verified")
+    elif cv is False:
+        cert_bits.append("chain NOT verified")
+    if cert_bits:
+        lines.append(_row2("cert", " · ".join(cert_bits)))
+    if cert.get("spki_sha256"):
+        lines.append(_row2("pin", _wrap(f"spki {cert['spki_sha256'][:16]}…", _DIM)))
+    return "\n".join(lines)
+
+
+def fmt_rollup(results: list[dict], elapsed: float | None = None) -> str:
+    """Sweep rollup: vendor counts, unknowns, flags, weak verdicts.
+
+    For a continuous sweep the aggregate IS the product — 87 rows scroll
+    past, this is the part worth reading. Unknown hosts are named (up to a
+    few) because they are the signature-mining queue.
+    """
+    if not results:
+        return ""
+    counts: dict[str, int] = {}
+    unknown: list[str] = []
+    weak = 0
+    mtls = blocks = errors = 0
+    for r in results:
+        ver = r.get("verdict") or []
+        if ver:
+            counts[ver[0]["vendor"]] = counts.get(ver[0]["vendor"], 0) + 1
+            if _is_weak(ver[0]):
+                weak += 1
+        elif not r.get("error"):
+            unknown.append(r["hostport"])
+        if (r.get("tls") or {}).get("mtls"):
+            mtls += 1
+        if r.get("block"):
+            blocks += 1
+        if r.get("error"):
+            errors += 1
+
+    width = min(_term_width() or 72, 72)
+    head = f"{len(results)} hosts"
+    if elapsed is not None:
+        head += f" · {elapsed:.1f}s"
+    lines = [_wrap("── " + head + " " + "─" * max(0, width - len(head) - 4), _DIM)]
+
+    if counts:
+        top = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        shown = " · ".join(f"{_wrap(v, _vendor_color(v))} {n}" for v, n in top[:8])
+        if len(top) > 8:
+            shown += f" · +{len(top) - 8} more"
+        lines.append(_row("edges", shown))
+    if unknown:
+        names = ", ".join(unknown[:3])
+        if len(unknown) > 3:
+            names += f", +{len(unknown) - 3}"
+        lines.append(_row("unknown", f"{len(unknown)}  ({names})"))
+    flag_bits = []
+    if mtls:
+        flag_bits.append(_wrap(f"mTLS {mtls}", _CRIT))
+    if blocks:
+        flag_bits.append(_wrap(f"BLOCK {blocks}", _CRIT))
+    if errors:
+        flag_bits.append(_wrap(f"errors {errors}", _CRIT))
+    if flag_bits:
+        lines.append(_row("flags", " · ".join(flag_bits)))
+    if weak:
+        lines.append(_row("weak", _wrap(
+            f"{weak} verdict{'s' if weak > 1 else ''} "
+            f"{'rest' if weak > 1 else 'rests'} on headers only (spoofable) "
+            f"— confirm with --verify", _YELLOW)))
     return "\n".join(lines)
 
 
@@ -416,6 +756,9 @@ def md_doc(results: list[dict]) -> str:
 CSV_HEADER = [
     "host", "port", "ips", "cname", "verdict", "confidence", "signals",
     "mtls", "tls_version", "alpn", "spki", "http_status", "block", "error",
+    # appended (0.1.32) — new columns go on the END so existing column
+    # indexes stay valid for anything already parsing this file
+    "basis", "final_host",
 ]
 
 
@@ -454,6 +797,8 @@ def csv_doc(results: list[dict]) -> str:
             http.get("status", ""),
             blk.get("vendor", ""),
             r.get("error", ""),
+            _basis(top) if top else "",
+            http.get("final_host", ""),
         ])
     return buf.getvalue()
 
@@ -529,6 +874,8 @@ def sarif_doc(results: list[dict], tool_version: str = "") -> str:
             "error": err or "",
             "confidence": top.get("confidence", ""),
             "signals": top.get("signals", ""),
+            "categories": top.get("categories", []) or [],
+            "basis": _basis(top) if top else "",
             "evidence": top.get("evidence", []) or [],
         }
 
