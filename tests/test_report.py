@@ -224,42 +224,37 @@ class TestCompactBlock:
         assert "HIGH" in out and "82" in out          # band first, score after
         assert "net + cert + cname + http" in out     # basis, spaced
 
-    def test_block_adds_facts_the_table_lacks(self):
-        # the block carries what the table row cannot: path, cert, pin.
-        # Raw evidence strings moved to --verbose (the analytical view).
-        from w4f.report import fmt_compact_block
-        out = fmt_compact_block(_result_with_verdict())
-        assert "200" in out                            # path
-        assert "1.3 h2" in out                         # TLS row
-        assert "Example CA" in out and "100d left" in out
-        assert "chain verified" in out
-        assert "SPKI" in out and "aaaa" in out         # pin (truncated)
-
-    def test_san_shown_in_triage_view(self):
-        # the cert's scope (sibling hosts, wildcard reach) is triage material,
-        # not verbose-only detail
-        from w4f.report import fmt_compact_block
-        r = _result_with_verdict()
-        r["tls"]["cert"]["san"] = "api.example.com, www.api.example.com"
-        out = fmt_compact_block(r)
-        assert "san" in out
-        assert "api.example.com, www.api.example.com" in out
-
-    def test_san_capped_tighter_than_verbose(self):
+    def test_triage_block_does_not_restate_the_table(self):
+        # The default (triage) block must NOT repeat what the summary-table row
+        # already carries — path, TLS, cert issuer/expiry, SPKI pin. Those are
+        # the table columns and the --verbose view; restating them is the "too
+        # dense / restates the table" problem the block was trimmed to fix.
         from w4f.report import fmt_block, fmt_compact_block
         r = _result_with_verdict()
-        r["tls"]["cert"]["san"] = ", ".join(f"h{i}.example.com" for i in range(9))
         compact = fmt_compact_block(r)
-        assert "h0.example.com, h1.example.com, h2.example.com" in compact
-        assert "(+6 more)" in compact       # 3 shown in the triage block
-        assert "h3.example.com" not in compact
-        assert "(+3 more)" in fmt_block(r)  # 6 shown under --verbose
+        assert "SPKI" not in compact          # pin -> table/--verbose
+        assert "\n  path" not in compact      # status is a table column
+        assert "\n  TLS" not in compact       # TLS is a table column
+        assert "100d left" not in compact     # cert expiry is a table column
+        # …but --verbose still carries all of it (the analytical view).
+        verbose = fmt_block(r)
+        assert "spki" in verbose.lower() and "aaaa" in verbose
+        assert "100d left" in verbose
 
-    def test_no_san_row_when_cert_has_none(self):
-        from w4f.report import fmt_compact_block
+    def test_san_is_verbose_only(self):
+        # The cert's SAN scope is analytical detail: it belongs in --verbose
+        # (fmt_block), not the calm triage block.
+        from w4f.report import fmt_block, fmt_compact_block
         r = _result_with_verdict()
-        r["tls"]["cert"].pop("san", None)
-        assert "\n  san" not in fmt_compact_block(r)
+        r["tls"]["cert"]["san"] = "api.example.com, www.api.example.com"
+        assert "www.api.example.com" not in fmt_compact_block(r)
+        assert "www.api.example.com" in fmt_block(r)
+
+    def test_san_capped_in_verbose(self):
+        from w4f.report import fmt_block
+        r = _result_with_verdict()
+        r["tls"]["cert"]["san"] = ", ".join(f"h{i}.example.com" for i in range(9))
+        assert "(+3 more)" in fmt_block(r)  # 6 shown under --verbose
 
     def test_layer_is_shown_separately_from_alternatives(self):
         # an origin under the edge is a LAYER of the stack, never presented
@@ -294,14 +289,16 @@ class TestCompactBlock:
         assert "content-type" not in out      # noise excluded
         assert "x-frame-options" not in out   # generic security header excluded
 
-    def test_redirect_chain_shown(self):
-        from w4f.report import fmt_compact_block
+    def test_redirect_final_host_flagged(self):
+        # a redirect means the headers describe a different final host — the
+        # triage block flags it in the header line (and the table NOTES); the
+        # full hop chain is in --verbose.
+        from w4f.report import fmt_block, fmt_compact_block
         r = _result_with_verdict()
         r["tls"]["http"]["redirects"] = ["https://www.api.example.com/"]
         r["tls"]["http"]["final_host"] = "www.api.example.com"
-        out = fmt_compact_block(r)
-        assert "www.api.example.com" in out
-        assert "1 hop" in out
+        assert "www.api.example.com" in fmt_compact_block(r)   # head flag
+        assert "www.api.example.com" in fmt_block(r)           # verbose chain
 
     def test_critical_flags(self):
         from w4f.report import fmt_compact_block
@@ -321,6 +318,67 @@ class TestCompactBlock:
     def test_no_markdown(self):
         from w4f.report import fmt_compact_block
         assert "**" not in fmt_compact_block(_result_with_verdict())
+
+
+class TestNeedsDetailBlock:
+    """Default mode is table-first: only hosts that need a look get a block."""
+
+    def test_clean_attribution_needs_no_block(self):
+        # a cleanly attributed host is fully described by its table row
+        from w4f.report import needs_detail_block
+        assert needs_detail_block(_result_with_verdict()) is False
+
+    def test_common_layer_alone_does_not_force_a_block(self):
+        # cloudflare -> nginx (origin): the table's "+1" and --verbose convey
+        # the stack; forcing a block per layered host would break table-first
+        from w4f.report import needs_detail_block
+        r = _result_with_verdict()
+        r["verdict"] = [
+            r["verdict"][0],
+            {"vendor": "nginx", "signals": 1, "confidence": 7,
+             "categories": ["headers"], "deployment": "origin",
+             "evidence": ["header server: nginx"]},
+        ]
+        assert needs_detail_block(r) is False
+
+    def test_competing_edge_alternative_forces_a_block(self):
+        # a MEDIUM-or-better second EDGE vendor is a genuine near-miss
+        from w4f.report import needs_detail_block
+        r = _result_with_verdict()
+        r["verdict"] = [
+            r["verdict"][0],
+            {"vendor": "aws-cloudfront", "signals": 2, "confidence": 40,
+             "categories": ["cname", "headers"], "deployment": "cloud",
+             "evidence": ["cname: x.cloudfront.net"]},
+        ]
+        assert needs_detail_block(r) is True
+
+    def test_trivial_low_alternative_does_not_force_a_block(self):
+        from w4f.report import needs_detail_block
+        r = _result_with_verdict()
+        r["verdict"] = [
+            r["verdict"][0],
+            {"vendor": "cloudflare-waf", "signals": 1, "confidence": 3,
+             "categories": ["cookies"], "deployment": "cloud",
+             "evidence": ["cookie: __cf_bm"]},
+        ]
+        assert needs_detail_block(r) is False
+
+    def test_unknown_and_error_need_a_block(self):
+        from w4f.report import needs_detail_block
+        unknown = _result_with_verdict(); unknown["verdict"] = []
+        assert needs_detail_block(unknown) is True
+        errored = {"hostport": "x:443", "error": "DNS did not resolve",
+                   "tls": {}, "verdict": []}
+        assert needs_detail_block(errored) is True
+
+    def test_critical_flags_force_a_block(self):
+        from w4f.report import needs_detail_block
+        blocked = _result_with_verdict()
+        blocked["block"] = {"vendor": "fortiweb", "title": "blocked", "status": "500"}
+        assert needs_detail_block(blocked) is True
+        mtls = _result_with_verdict(); mtls["tls"]["mtls"] = True
+        assert needs_detail_block(mtls) is True
 
 
 class TestMdDoc:

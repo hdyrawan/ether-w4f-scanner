@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.37
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.38
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -39,15 +39,8 @@ edge.example.io:443   unknown              -  -                           1.3 h2
 inspected.example.org:443  INTERCEPTED          -  -                           1.3 h2  Fortinet -168d      403  INTERCEPTED
 www.example.net:443   akamai          LOW 20  cname                       -       -                     -  ERR connect failed: timed out
 
-www.example.com:443
-  cloudflare                    HIGH   85
-  net + cert + cname + http + cookie   (cloud)
-  layer   cloudflare → varnish
-  alt     cloudflare-waf  LOW 3
-  path    200
-  cert    Cloudflare · 55d left · chain verified
-  TLS     1.3 h2
-  SPKI    343d1536f3666f92…
+# www.example.com is cleanly attributed — its table row says it all, so it
+# gets no block. Only the hosts that need a look do:
 
 shop.example.net:443
   EDGE    AMBIGUOUS
@@ -59,13 +52,7 @@ shop.example.net:443
 
 edge.example.io:443
   EDGE    UNKNOWN
-  OBSERVED
-    IP        198.51.100.30
-    CNAME     edge.provider.net
-    TLS       1.3 h2
-    Issuer    Let's Encrypt
-    HTTP      acme-edge
-  leads   server: acme-edge · x-acme-pop: sin1
+  leads   cname edge.provider.net · server: acme-edge · x-acme-pop: sin1
 
 inspected.example.org:443  INTERCEPTED
   EDGE    NOT DETERMINED
@@ -83,8 +70,11 @@ www.example.net:443  ERR connect failed: timed out
 ```
 
 `BASIS` is the column that decides whether to believe the row: `net+cert`
-is ownership evidence, a bare `hdr` is a string the origin can set. Each
-host then gets a detail block and the sweep gets a rollup — see
+is ownership evidence, a bare `hdr` is a string the origin can set. Default
+mode is **table-first**: cleanly attributed hosts are just their table row,
+and only hosts that need a look (unknown, ambiguous, intercepted, error,
+block page, mTLS, a competing edge) get a detail block; the sweep ends with a
+rollup. `-v`/`--verbose` prints the full block for every host — see
 [Example output](#example-output).
 
 No attack payloads. Nothing is chain-validated the way a client trusts it —
@@ -330,50 +320,26 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.34
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.38
 
-HOST                    EDGE        CONF  BASIS               TLS     CERT                 HTTP  NOTES
-api.example.com:443     imperva +1   62%  net+cert+hdr        1.3 h2  Imperva Inc 64d       403  mTLS  BLOCK imperva
-shop.example.net:443    cloudflare   82%  net+cert+cname+hdr  1.3 h2  SSL Corporati… 73d    200  ->www.shop.example.net
-origin.example.org:443  nginx         7%  hdr                 1.3 h2  Let's Encrypt 21d     200
-edge.example.io:443     unknown        -  -                   1.3 h2  GlobalSign nv… 161d   200
-dead.example.io:443     -              -  -                   -       -                       -  ERR DNS did not resolve
-
-api.example.com:443  mTLS  BLOCK imperva
-  edge    imperva  62%  net+cert+hdr
-          header x-iinfo: 7-1234567-1234567 NNNN CT(1 1 0) · netblock: 203.0.113.10 in 203.0.113.0/24 · cert: Imperva Inc
-  stack   nginx  7%  hdr
-  path    403 · TLS1.3 h2
-  cert    Imperva Inc · 64d left · chain verified
-  san     api.example.com
-  pin     spki 343d1536f3666f92…
-
-shop.example.net:443  ->www.shop.example.net
-  edge    cloudflare  82%  net+cert+cname+hdr
-          header server: cloudflare · header cf-ray: 9a2b4f55b2f67d43-SIN · cname: shop.example.net.cdn.cloudflare.net · +1 more
-  path    -> www.shop.example.net (1 hop) · 200 · TLS1.3 h2
-  cert    SSL Corporation · 73d left · chain verified
-  san     shop.example.net, www.shop.example.net, *.cdn.example.net  (+1 more)
-  pin     spki 0856752f53199a67…
-
-origin.example.org:443
-  edge    nginx  7%  hdr  (headers only — spoofable)
-          header server: nginx
-  path    200 · TLS1.3 h2
-  cert    Let's Encrypt · 21d left · chain verified
-  san     origin.example.org
-  pin     spki 9c11885c885a00ab…
-
-edge.example.io:443
-  edge    unknown — no signature matched
-  leads   server: acme-edge · x-acme-pop: sin1 · x-acme-request-id
-  path    200 · TLS1.3 h2
-  cert    GlobalSign nv-sa · 161d left · chain verified
-  san     edge.example.io
-  pin     spki a7adf62a1443f271…
+HOST                    EDGE         CONF     BASIS               TLS     CERT                 HTTP  NOTES
+dead.example.io:443     -            -                            -       -                       -  ERR DNS did not resolve
+api.example.com:443     imperva +1   MED 62   net+cert+hdr        1.3 h2  Imperva Inc 64d       403  mTLS  BLOCK imperva!
+edge.example.io:443     UNKNOWN      -                            1.3 h2  GlobalSign nv… 161d   200
+origin.example.org:443  nginx        LOW 7    hdr                 1.3 h2  Let's Encrypt 21d     200
+shop.example.net:443    cloudflare   HIGH 82  net+cert+cname+hdr  1.3 h2  SSL Corporati… 73d    200  ->www.shop.example.net
 
 dead.example.io:443  ERR DNS did not resolve
   error   DNS did not resolve
+
+api.example.com:443  mTLS  BLOCK imperva!
+  imperva                       MEDIUM 62
+  net + cert + hdr
+  layer   imperva → nginx
+
+edge.example.io:443
+  EDGE    UNKNOWN
+  leads   server: acme-edge · x-acme-pop: sin1 · x-acme-request-id
 
 ── 5 hosts · 3.4s ──────────────────────────────────────────────────────
 edges     cloudflare 1 · imperva 1 · nginx 1
@@ -382,18 +348,25 @@ flags     mTLS 1 · BLOCK 1 · errors 1
 weak      1 verdict rests on headers only (spoofable) — confirm with --verify
 ```
 
-Default mode is the **triage view**: a summary table of every host, a block
-per host, then a sweep rollup. Each block is shaped by the result **state**,
-because "no vendor name" has several very different causes and collapsing
-them loses the decision:
+Default mode is the **triage view** and is deliberately **table-first**: a
+summary table of every host, then a sweep rollup, and a per-host block **only
+for the hosts that need a look** — an error, a block page, mTLS, an unknown
+edge, an ambiguous or intercepted result, or a genuinely competing edge. The
+two cleanly-attributed hosts above (`shop.example.net`, `origin.example.org`)
+are fully described by their table row, so they get no block — that is what
+keeps a 50-host sweep scannable. Reach for `-v`/`--verbose` (below) when you
+want the full analytical block for *every* host.
+
+Each block is shaped by the result **state**, because "no vendor name" has
+several very different causes and collapsing them loses the decision:
 
 | state | meaning |
 |---|---|
-| named vendor | one candidate is best-evidenced |
+| `ATTRIBUTED` (named vendor) | one candidate is best-evidenced; the vendor is named |
 | `AMBIGUOUS` | edge candidates too close to separate — both are shown, rather than silently picking the higher |
-| `UNKNOWN` | scanned, nothing matched. The observations are the lead for the next signature |
+| `UNKNOWN` | scanned, nothing matched. The observations/leads are the start of the next signature |
 | `INTERCEPTED` | something on the **scanner's** path re-signed the connection; no vendor is attributed and the cert/pin may be the middlebox's |
-| error | the host could not be probed. A host that failed *but* resolved a vendor CNAME still reports that vendor — DNS resolves before the handshake |
+| `ERROR` | the host could not be probed. A host that failed *but* resolved a vendor CNAME still reports that vendor — DNS resolves before the handshake |
 
 `layer` is the stack, not a rival: an origin underneath the edge
 (`cloudflare → varnish`) is reported as a **layer**, while `alt` lists only
@@ -531,7 +504,9 @@ from `hdr`/`cookie` is marked *headers only — spoofable*.
 **Verdicts are ranked by confidence**, so `verdict[0]` — the vendor the
 table, `--csv` and SARIF call the edge — is the best-evidenced one. A second
 entry is usually the origin behind that edge (`imperva` in front of
-`nginx`), shown as `+1` in the table and on a `stack` line in the block.
+`nginx`), shown as `+1` in the table and on a `layer` line in the block
+(default mode prints that block only when the host also warrants a look; see
+the triage-view note above).
 Per-vendor `weights` overrides are allowed; see
 [`docs/vendor-signatures.md`](docs/vendor-signatures.md) for the full table
 and the "why" behind each signal.

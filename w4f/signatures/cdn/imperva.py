@@ -16,10 +16,15 @@ VENDOR = {'name': 'imperva',
  'cert': 'imperva',
  'cname': 'incapdns|impervadns',
  'ptr': 'incap|imperva',
+ # NOTE: 103.21.244.0/22 was listed here but is a PUBLISHED CLOUDFLARE
+ # range (see cdn/cloudflare.py) — a host in it matched both vendors on
+ # netblock (30 pts each) and read as a spurious cloudflare/imperva
+ # ambiguity. Removed. Imperva's real neighbour range (103.28.248.0/22)
+ # should be re-added only after verification against Imperva's official
+ # IP-range publication; do not restore the Cloudflare value.
  'nets': ['199.83.128.0/21',
           '198.143.32.0/19',
           '149.126.72.0/21',
-          '103.21.244.0/22',
           '45.64.64.0/22',
           '185.11.124.0/22',
           '192.230.64.0/18',

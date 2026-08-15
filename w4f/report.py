@@ -550,14 +550,22 @@ _LEAD_VALUE_HEADERS = {"server", "via", "x-powered-by", "x-cdn", "x-cache",
 
 
 def _unmatched_leads(r: dict, limit: int = 4) -> str:
-    """Fingerprintable headers/cookies present on an UNKNOWN edge.
+    """Fingerprintable facts present on an UNKNOWN edge — the lead for the
+    next signature file.
 
-    AGENTS.md trap #7: an unknown verdict is a tool gap to fix, not a result
-    to accept. Printing the vendor-ish headers that matched nothing turns
-    every unknown host in a sweep into the lead for the next signature file.
+    AGENTS.md trap #7/#9: an unknown verdict is a tool gap to fix, not a
+    result to accept. The triage block no longer prints the full OBSERVED set
+    (that is the --verbose view), so the DNS-delegation leads a reader would
+    actually chase — the CNAME and PTR (often the CDN's own naming, e.g. a
+    `.somecdn.net` suffix) — are surfaced here alongside the vendor-ish
+    headers/cookies that matched nothing.
     """
     http = (r.get("tls") or {}).get("http") or {}
     leads: list[str] = []
+    for cn in (r.get("cname") or [])[:1]:
+        leads.append(f"cname {cn}")
+    for pt in (r.get("ptr") or [])[:1]:
+        leads.append(f"ptr {pt}")
     for h, v in (http.get("headers") or {}).items():
         hl = h.lower()
         if hl in _LEAD_NOISE:
@@ -631,14 +639,12 @@ def fmt_compact_block(r: dict) -> str:
 
     if state == ATT.STATE_UNKNOWN:
         lines.append(_row2("EDGE", _wrap("UNKNOWN", _DIM)))
-        obs = _observed_rows(r)
-        if obs:
-            lines.append("  OBSERVED")
-            lines.extend(obs)
+        # The full observations (IP / CNAME / PTR / cert / SPKI) are the
+        # --verbose view. The triage block shows only the fingerprintable
+        # headers/cookies that matched NO signature — the lead for the next
+        # rule, and the one thing the table row cannot carry.
         leads = _unmatched_leads(r)
         if leads:
-            # the fingerprintable headers that matched NO signature: an
-            # unknown is a tool gap, and this is where the next rule starts
             lines.append(_row2("leads", _wrap(leads, _YELLOW)))
         return "\n".join(lines)
 
@@ -651,7 +657,6 @@ def fmt_compact_block(r: dict) -> str:
         for cand in cands:
             lines.append(f"    {cand.get('vendor', '?'):<20}"
                          f"{_wrap(_basis_pretty(cand.get('basis')), _DIM)}")
-        lines.extend(_context_rows(r))
         return "\n".join(lines)
 
     # ATTRIBUTED
@@ -678,53 +683,43 @@ def fmt_compact_block(r: dict) -> str:
     if att.get("error"):
         # evidence survived a failed probe — show both, not one or the other
         lines.append(_row2("error", _wrap(str(att["error"])[:80], _CRIT)))
-    lines.extend(_context_rows(r))
     return "\n".join(lines)
 
 
-def _context_rows(r: dict) -> list[str]:
-    """The response facts a decision needs next to the attribution."""
-    tls = r.get("tls") or {}
-    http = tls.get("http") or {}
-    cert = tls.get("cert") or {}
-    lines = []
-    chain_bits = []
-    if http.get("redirects"):
-        hops = len(http["redirects"])
-        chain_bits.append(f"-> {http.get('final_host') or '?'} ({hops} hop"
-                          f"{'s' if hops > 1 else ''})")
-    status = _status_code(r)
-    if status != "-":
-        chain_bits.append(status)
-    if chain_bits:
-        lines.append(_row2("path", " · ".join(chain_bits)))
-    cert_bits = []
-    issuer = str(cert.get("issuer_org") or cert.get("issuer") or "").split(",")[0]
-    if issuer:
-        cert_bits.append(issuer)
-    if cert.get("days_remaining") is not None:
-        cert_bits.append(f"{cert['days_remaining']}d left")
-    cv = r.get("chain_verified")
-    if cv is True:
-        cert_bits.append("chain verified")
-    elif cv is False:
-        cert_bits.append("chain NOT verified")
-    if cert_bits:
-        lines.append(_row2("cert", " · ".join(cert_bits)))
-    san_line = _san_summary(cert, limit=3)
-    if san_line:
-        lines.append(_row2("san", san_line))
-    icept = r.get("interception")
-    if icept:
-        lines.append(_row2("!", _wrap(
-            f"TLS intercepted by {icept.get('by', '?')} between w4f and the "
-            f"target ({icept.get('evidence', '')}) — cert and pin are the "
-            f"middlebox's, NOT this host's", _CRIT)))
-    if _tls_cell(r) != "-":
-        lines.append(_row2("TLS", _tls_cell(r)))
-    if cert.get("spki_sha256"):
-        lines.append(_row2("SPKI", _wrap(cert["spki_sha256"][:16] + "…", _DIM)))
-    return lines
+def needs_detail_block(r: dict) -> bool:
+    """Whether DEFAULT (non-verbose) mode prints a per-host block for `r`.
+
+    The summary table already carries host, edge, confidence, basis, TLS,
+    cert issuer, HTTP status and the critical flags. A cleanly ATTRIBUTED
+    host is therefore fully described by its table row and gets no block —
+    that is what keeps a large sweep table-first and calm. A block is printed
+    only when there is something the row cannot say on its own:
+
+      * the state is not a clean attribution (UNKNOWN leads, AMBIGUOUS
+        candidates, INTERCEPTED warning, ERROR detail);
+      * a critical flag needs elaboration (block page, mTLS, interception,
+        probe error that still attributed);
+      * a GENUINELY competing edge (a MEDIUM-or-better alternative) is in
+        play — worth a second look.
+
+    A common origin LAYER (cloudflare → nginx) or a trivial LOW alternative
+    is deliberately NOT enough on its own: the table's "EDGE +N" cell already
+    signals it and the full stack is in the --verbose view, so forcing a
+    block for every layered host would defeat table-first on a large sweep.
+
+    --verbose ignores this and always prints the full analytical block.
+    """
+    att = _attribution(r)
+    if att.get("state") != ATT.STATE_ATTRIBUTED:
+        return True
+    if r.get("error") or r.get("block") or r.get("interception"):
+        return True
+    if (r.get("tls") or {}).get("mtls"):
+        return True
+    if any((a.get("score") or 0) >= ATT.MEDIUM_AT
+           for a in (att.get("alternatives") or [])):
+        return True
+    return False
 
 
 def _analysis_sections(att: dict, r: dict) -> list[str]:

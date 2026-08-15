@@ -316,12 +316,16 @@ class TestRendering:
         assert "cloudflare" in out and "aws-cloudfront" in out
         assert "BASIS" in out
 
-    def test_unknown_block_shows_observations(self):
+    def test_unknown_block_shows_leads(self):
+        # the triage block for an unknown edge is leads-only (the full OBSERVED
+        # set is the --verbose view); the CNAME is the strongest lead and must
+        # be one of them.
         out = fmt_compact_block(_result([], headers={"server": "acme-edge"},
                                         cname=["edge.provider.net"]))
         assert "UNKNOWN" in out
-        assert "OBSERVED" in out
-        assert "edge.provider.net" in out
+        assert "leads" in out
+        assert "edge.provider.net" in out   # CNAME surfaced as a lead
+        assert "acme-edge" in out
 
     def test_interception_block_warns_and_names_no_vendor(self):
         r = _result([_match("cloudflare", 82, ["cert"])],

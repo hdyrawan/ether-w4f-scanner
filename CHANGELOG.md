@@ -5,6 +5,40 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.38] — 2026-08-15
+
+Stabilization pass (external review): make the default output calm and
+table-first, fix one clear false-positive bug, and document the model for
+operators. No new attribution states/fields, no scoring changes, no new
+vendor families.
+
+- **Default output is now table-first.** The summary table remains the
+  primary glanceable view; a per-host block is printed **only for hosts that
+  need a look** — UNKNOWN, AMBIGUOUS, INTERCEPTED, ERROR, a block page, mTLS,
+  or a genuinely competing edge (a MEDIUM+ alternative). A cleanly attributed
+  host is fully described by its table row and gets no block, so a large
+  sweep stays scannable instead of scrolling one dense block per host. New
+  `report.needs_detail_block()` encodes the rule; `--verbose` is unchanged
+  and still prints the full analytical block for every host.
+- **The default block no longer restates the table.** The triage block
+  dropped the rows that merely repeat table columns (path, TLS, cert
+  issuer/expiry, SPKI pin) and the SAN row; those are the table cells and the
+  `--verbose` view. An UNKNOWN block is now leads-only — and the CNAME/PTR
+  (often the CDN's own naming, the strongest lead for the next signature) are
+  surfaced in the `leads` line rather than buried in a dropped OBSERVED block.
+- **Bug fix — imperva carried a Cloudflare netblock.** `103.21.244.0/22` is a
+  published Cloudflare range but was also listed under `imperva`, so a host
+  in it double-matched on netblock and read as a spurious cloudflare/imperva
+  ambiguity. Removed. A new loader test (`test_no_cross_vendor_netblock_overlap`)
+  fails the build if any two vendors ever claim the same range again.
+- **Docs.** The README "Example output" and state table now reflect the
+  table-first behavior and name every state (ATTRIBUTED / AMBIGUOUS /
+  UNKNOWN / INTERCEPTED / ERROR); the existing "Reading a verdict" section
+  already explains that confidence is a weighted evidence sum, not a
+  probability.
+- Tests updated for the intentionally-changed default block (SAN/SPKI/path →
+  `--verbose`); `+` new `needs_detail_block` coverage. Full suite green.
+
 ## [0.1.37] — 2026-08-15
 
 Automation ergonomics (user request): `--no-banner`.

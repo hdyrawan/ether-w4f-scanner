@@ -13,7 +13,8 @@ import time
 from w4f import __version__
 from w4f.banner import BANNER
 from w4f.report import (csv_doc, fmt_block, fmt_compact_block, fmt_rollup,
-                        fmt_summary_table, md_doc, sarif_doc)
+                        fmt_summary_table, md_doc, needs_detail_block,
+                        sarif_doc)
 from w4f.scanner import probe_one
 
 
@@ -408,9 +409,17 @@ def main(argv: list[str] | None = None) -> int:
             print()
         print(fmt_summary_table(shown))
         print()
+        # Default mode is table-first: a per-host block is printed only for
+        # hosts that need a look (needs_detail_block) — a cleanly attributed
+        # host is fully described by its table row. --verbose prints the full
+        # analytical block for every host.
         for r in shown:
-            print(fmt_block(r) if args.verbose else fmt_compact_block(r))
-            print()
+            if args.verbose:
+                print(fmt_block(r))
+                print()
+            elif needs_detail_block(r):
+                print(fmt_compact_block(r))
+                print()
         if len(results) > 1:
             print(fmt_rollup(results, elapsed))
             print()

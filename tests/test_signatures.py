@@ -46,6 +46,28 @@ class TestSignatureDiscovery:
         assert "name" not in vendors["cloudflare"]
         assert vendors["cloudflare"]["headers"]["server"]
 
+    def test_no_cross_vendor_netblock_overlap(self):
+        # A netblock is the strongest single signal (30 pts). Two vendors
+        # claiming the SAME range means a host in it double-matches on
+        # ownership and reads as a spurious ambiguity — this once shipped as a
+        # Cloudflare range mistyped into imperva's list. Ownership is
+        # exclusive; the table must never assign one range to two vendors.
+        import ipaddress
+
+        from w4f.signatures import load_signatures
+        vendors = load_signatures()
+        nets = {n: [ipaddress.ip_network(x) for x in r.get("nets", [])]
+                for n, r in vendors.items() if r.get("nets")}
+        names = sorted(nets)
+        overlaps = []
+        for i, a in enumerate(names):
+            for b in names[i + 1:]:
+                for na in nets[a]:
+                    for nb in nets[b]:
+                        if na.overlaps(nb):
+                            overlaps.append(f"{a} {na} <-> {b} {nb}")
+        assert not overlaps, "overlapping vendor netblocks: " + "; ".join(overlaps)
+
     def test_single_and_list_exports_both_loaded(self, tmp_path, monkeypatch):
         # a temp package with a VENDOR (single) and a VENDORS (list) module
         from w4f.signatures import load_signatures
