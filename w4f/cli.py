@@ -313,6 +313,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="show the FULL per-host detail (cert, SPKI, response "
                          "headers, verdict evidence) instead of the compact "
                          "triage view; the summary table prints either way")
+    ap.add_argument("--no-banner", action="store_true",
+                    help="suppress the ASCII banner + version tagline (keep "
+                         "the summary table and per-host blocks — for piping "
+                         "the table into scripts)")
     return ap
 
 
@@ -398,9 +402,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.quiet:
         shown = display_order(results, args.sort)
-        print(BANNER)
-        print(f"  {_TAGLINE}   v{__version__}")
-        print()
+        if not args.no_banner:
+            print(BANNER)
+            print(f"  {_TAGLINE}   v{__version__}")
+            print()
         print(fmt_summary_table(shown))
         print()
         for r in shown:

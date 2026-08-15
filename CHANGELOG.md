@@ -5,6 +5,20 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.37] — 2026-08-15
+
+Automation ergonomics (user request): `--no-banner`.
+
+- **`--no-banner`** suppresses the ASCII banner + version tagline so the
+  output starts directly at the summary table — for piping the triage table
+  into scripts/column parsers without a 9-line figlet header. Composes with
+  the rest: `--quiet` still suppresses everything; `--verbose`/table output
+  are unaffected. (This is deliberately NOT `--banner-only` — that flag
+  duplicated default behaviour and was removed; suppressing noise for
+  automation is a different job.)
+- +3 tests (384 total): parser default/flag, output starts at the table
+  with no art/tagline.
+
 ## [0.1.36] — 2026-08-15
 
 Makes the 0.1.35 attribution model explainable to an analyst. No new

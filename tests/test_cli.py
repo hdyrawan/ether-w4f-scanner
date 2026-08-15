@@ -140,6 +140,19 @@ class TestStdin:
         assert "dropping target 'file:///etc/passwd'" in err
         assert rc in (0, 1)
 
+    def test_no_banner_skips_art_keeps_table(self, monkeypatch, capsys):
+        from w4f.cli import main
+        import io
+        monkeypatch.setattr(sys, "stdin", io.StringIO("8.8.8.8\n"))
+        monkeypatch.setattr(sys, "argv",
+                            ["w4f", "--no-banner", "--no-http", "--timeout", "2"])
+        rc = main()
+        out = capsys.readouterr().out
+        assert rc in (0, 1)
+        assert "██" not in out                    # no figlet art
+        assert "fingerprinting" not in out        # no tagline/version line
+        assert out.lstrip().startswith("HOST")    # straight to the table
+
 
 class TestParser:
     def test_version_flag(self):
@@ -175,6 +188,11 @@ class TestParser:
         ap = build_parser()
         assert ap.parse_args(["--target", "a.com"]).verify is False
         assert ap.parse_args(["--target", "a.com", "--verify"]).verify is True
+
+    def test_no_banner_flag(self):
+        ap = build_parser()
+        assert ap.parse_args(["--target", "a.com"]).no_banner is False
+        assert ap.parse_args(["--target", "a.com", "--no-banner"]).no_banner is True
 
     def test_no_targets_exits_2(self, monkeypatch):
         from w4f.cli import main

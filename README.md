@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.36
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.37
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -292,7 +292,8 @@ w4f --target api.example.com --no-http
 | `--csv FILE` | write a flat CSV — one row per host, primary verdict: host, port, ips, cname, verdict, confidence, signals, mtls, tls_version, alpn, spki, http_status, block, error, basis, final_host |
 | `--sarif FILE` | write a SARIF 2.1.0 report for security dashboards / GitHub Code Scanning — one result per host, rule ids `w4f/<vendor>`, `w4f/block`, `w4f/mtls`, `w4f/probe-error`, `w4f/unknown-edge` |
 | `--sort risk\|host\|edge` | console ordering (default `risk`: errors, block pages, mTLS, unknown and header-only verdicts first). `host` = alphabetical, `edge` = grouped by vendor. File outputs are always host-sorted. |
-| `-v`, `--verbose` | show the FULL per-host detail (cert, SPKI, response headers, verdict evidence) instead of the triage view — the summary table prints either way |
+| `-v`, `--verbose` | show the FULL per-host detail (cert, SPKI, response headers, verdict evidence) instead of the compact triage view — the summary table prints either way |
+| `--no-banner` | suppress the ASCII banner + version tagline — output starts at the summary table (for piping the table into scripts) |
 | `--no-http` | TLS/cert/DNS only, skip the HTTP request |
 | `--ws PATH` | **OPT-IN** — send an RFC 6455 WebSocket upgrade request to this path and report whether the edge answers `101` (plus `Sec-WebSocket-Accept`) |
 | `--grpc` | **OPT-IN** — send a `grpc.health.v1.Health/Check` request and report `grpc-status` / `grpc-message`, or the HTTP/2 binary-framing answer (real gRPC is h2; pairs with the ALPN observation) |
