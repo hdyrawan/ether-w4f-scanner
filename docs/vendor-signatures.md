@@ -169,6 +169,14 @@ Headers:
   CNAME is the reliable signal.
 - `server: volc-dcdn` — **Volcengine DCDN** edge.
 - `x-bdcdn-cache-status` / `via: …bdcdn-…` — **Baidu Cloud CDN**.
+- `wzws-ray` — **360 WangZhanBao** (网站卫士 / QiAnXin cloud WAF) edge stamp.
+- `x-azion-*` prefix (`x-azion-request-id`, `x-azion-edge-location`) —
+  **Azion** (Brazilian edge).
+- `server: QRATOR` — **Qrator Labs** (Russian anti-DDoS). `server:
+  Variti/<ver>` — **Variti** (Russian WAF/CDN; also TLS-fingerprints
+  clients, so it can block a passive probe entirely). `server: uewaf/<ver>`
+  — **UCloud WAF**. `server: Airee/Cloud` — **Airee** (Russian CDN, sets
+  `airee_*` cookies too).
 - `x-ccdn-*` prefix + `x-hcs-proxy-type` — **Huawei Cloud CDN** cache nodes.
 - `eagleeye-traceid` — Alibaba observability trace header (Alibaba's own
   properties and ESA-fronted services).
@@ -216,6 +224,8 @@ platforms (see the shared-platform markers below):
 | `*.vedcdnlb.com` | Volcengine DCDN |
 | `*.bytedns1.com` | ByteDance |
 | `*.a.shifen.com` (shifen.com) | Baidu BFE (Baidu's own front end) |
+| `*.qaxcloudwaf.com` / `*.icloudwaf.com` | QiAnXin / 360 WangZhanBao cloud WAF |
+| `*.jcloud-cdn.com` / `*.gslb.qianxun.com` | JD Cloud CDN / GSLB |
 
 **Shared platform markers (do NOT key rules on them alone):**
 `Via: …(Cdn Cache Server V2.0)` is emitted by BOTH Wangsu and ChinaCache;
@@ -265,18 +275,18 @@ default green:
 
 | color | vendors |
 |---|---|
-| bright yellow | Cloudflare, Cloudflare WAF, FortiWeb, Jiasule, 360 PanYun |
+| bright yellow | Cloudflare, Cloudflare WAF, FortiWeb, Jiasule, 360 PanYun, 360 WangZhanBao |
 | blue | Akamai, Baidu BFE, Baidu CDN |
 | red | Fastly (+ WAF), Alibaba CDN |
-| cyan | AWS family (CloudFront/WAF/ELB/…), ChinaCache |
+| cyan | AWS family (CloudFront/WAF/ELB/…), ChinaCache, Azion |
 | bright blue | Azure family (Front Door/AppGW/…), Wangsu, Huawei Cloud CDN |
 | bright magenta | Tencent family, Vercel, Squarespace, Volcengine |
 | magenta | Google GFE, GCP Armor |
 | bright red | F5, NetScaler, WSO2 |
-| bright cyan | Kong, Knownsec |
-| yellow | Imperva, Wangsu WAF (wswaf) |
+| bright cyan | Kong, Knownsec, UCloud WAF (uewaf) |
+| yellow | Imperva, Wangsu WAF (wswaf), Qrator, Variti |
 | dim | plain origins (nginx, Apache, IIS, Varnish, Envoy, HAProxy, …) |
-| green | everything else (default: Sucuri, Baishan, NetEase, Qiniu, …) |
+| green | everything else (default: Sucuri, Baishan, NetEase, Qiniu, JD Cloud, Airee, …) |
 
 Plain origin stacks are deliberately **dimmed** so the edge-vs-origin
 distinction is visible at a glance. A new vendor gets green by default; add

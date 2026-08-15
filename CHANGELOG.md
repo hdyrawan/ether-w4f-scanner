@@ -5,6 +5,34 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.30] — 2026-08-15
+
+Second sweep batch from the continuous harness (`~/sec/w4f-sweep`, hourly
+cron) — **7 new vendors (85 → 92)** + an sgw attribution fix, all mined
+from the 2,500-host bootstrap corpus + follow-up probes.
+
+New vendors:
+
+- **WAF (4):** `qrator` (`Server: QRATOR` — Qrator Labs, Russian
+  anti-DDoS), `360wangzhanbao` (`WZWS-RAY` header + qaxcloudwaf.com /
+  icloudwaf.com CNAMEs — QiAnXin/360 网站卫士 cloud WAF), `variti`
+  (`Server: Variti/<ver>` — Russian WAF/CDN), `uewaf` (`Server: uewaf/<ver>`
+  — UCloud WAF).
+- **CDN (3):** `airee` (`Server: Airee/Cloud` + `airee_*` cookies),
+  `jd-cloud` (jcloud-cdn.com / qianxun.com CNAMEs — JD Cloud CDN/GSLB),
+  `azion` (`x-azion-*` prefix headers — Brazilian edge).
+
+Attribution notes: the `security=true` cookie Azion sets is deliberately
+NOT a signal (name too generic). Variti's edge TLS-fingerprints clients —
+one observed host blocks w4f's probe while answering curl, so a blank
+verdict there is probe-blocking, not a missing rule.
+
+- 7 vendor files under `w4f/signatures/{cdn,waf}/`, colors for each in
+  `w4f/report.py`, README coverage list 85 → 92.
+- +10 tests (253 total), positive + negative per rule.
+- `w4f/signatures/gateways/sgw.py` docstring expanded (Shopee/Sea API
+  gateway attribution, RDAP-verified) + anchored-match warning.
+
 ## [0.1.29] — 2026-08-14
 
 China + internet-wide signature sweep — **14 new vendors (71 → 85)** and one
@@ -45,7 +73,7 @@ provider's marketing site was a false positive (host is Alibaba —
 
 - 14 vendor files under `w4f/signatures/{cdn,waf}/`, colors for each in
   `w4f/report.py`, README coverage list 71 → 85.
-- +25 tests (263 total), each new rule has positive + negative cases.
+- +32 tests (243 total), each new rule has positive + negative cases.
 
 ## [0.1.28] — 2026-08-14
 
