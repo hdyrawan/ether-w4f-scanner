@@ -1,0 +1,49 @@
+{
+  "observations": {
+    "host": "portal.example.com",
+    "hostport": "portal.example.com:443",
+    "port": 443,
+    "ips": ["23.45.7.89"],
+    "cname": ["portal.example.com.edgekey.net"],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Akamai Technologies Inc.",
+      "issuer": "O=Akamai Technologies Inc.",
+      "subject": "CN=portal.example.com",
+      "spki_sha256": "f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4",
+      "days_remaining": 50
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Akamai Technologies Inc.",
+        "issuer": "O=Akamai Technologies Inc.",
+        "subject": "CN=portal.example.com",
+        "spki_sha256": "f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4",
+        "days_remaining": 50
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "AkamaiGHost",
+          "content-type": "text/html"
+        },
+        "set-cookie-list": [
+          "NID_AUT=abc123; path=/"
+        ],
+        "redirects": [],
+        "final_host": "portal.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "akamai",
+    "min_band": "HIGH",
+    "note": "regional vendor behind a global CDN: a regional platform header (Naver nfront) would appear as a weaker candidate behind the Akamai edge — here only a Korean login cookie remains, which must NOT imply a regional vendor"
+  }
+}

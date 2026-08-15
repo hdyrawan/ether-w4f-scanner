@@ -5,6 +5,36 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.41] — 2026-08-15
+
+Detection-engine validation pass against a diverse financial-industry corpus
+(CN/JP/KR/EU, 112 hosts, private research list — nothing target-specific
+committed). Outcome: 42 CORRECT / 4 AMBIGUOUS / 29 UNKNOWN / 37 ERROR
+(network/geo: apex DNS, geo-blocking, timeouts) / **0 INCORRECT**; 3 silent
+WAFs (aws-waf behind CloudFront) confirmed only via the controlled --verify
+probe, with `source: verify` kept distinct from passive evidence.
+
+- **Attribution corpus 11 → 19 fixtures** (+8, all synthetic/RFC 5737/
+  example.*): CNAME-only regional edge, network+CNAME conflict (AMBIGUOUS),
+  strong global edge + weak platform header, regional vendor behind global
+  CDN, competing regional candidates, passive-WAF-requires-verify,
+  verification-negative (generic 403 is NOT a block), unknown regional edge
+  (correct UNKNOWN over guessing). Tally: 12 correct / 2 ambiguous /
+  3 unknown / 1 intercepted / 1 error / 0 incorrect.
+- **AGENTS.md verification methodology**: passive vs --verify modes,
+  provenance as a first-class field (`source: passive` vs `source:
+  verify`), terminology (observation / passive evidence / verification
+  evidence / attribution / layer / alternative / interception), and the
+  full promotion flow research → passive evidence → verification → tests →
+  PROMOTE/PASSIVE-ONLY/UNKNOWN/REJECT.
+- Validation findings: JP megabanks on Akamai/Kona, EU banks on
+  Imperva/Akamai/Cloudflare, CN brokers on Wangsu/Knownsec/Jiasule — all
+  already covered. No new signature justified (the goal's "correct UNKNOWN
+  beats incorrect HIGH"). AMBIGUOUS cases (network-vs-HTTP tension:
+  AWS Global Accelerator PTR vs Cloudflare edge, Google DNS vs Cloudflare
+  HTTP, ELB PTR vs CloudFront via) documented as legitimate uncertainty.
+- +14 tests (430 passed, 7 skipped).
+
 ## [0.1.40] — 2026-08-15
 
 Regional edge coverage batch (KR / JP / EU) — research-first, per the

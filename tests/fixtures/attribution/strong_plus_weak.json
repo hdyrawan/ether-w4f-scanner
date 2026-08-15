@@ -1,0 +1,48 @@
+{
+  "observations": {
+    "host": "www.example.com",
+    "hostport": "www.example.com:443",
+    "port": 443,
+    "ips": ["23.45.6.78"],
+    "cname": ["www.example.com.edgekey.net"],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Akamai Technologies Inc.",
+      "issuer": "O=Akamai Technologies Inc.",
+      "subject": "CN=www.example.com",
+      "spki_sha256": "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3",
+      "days_remaining": 66
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Akamai Technologies Inc.",
+        "issuer": "O=Akamai Technologies Inc.",
+        "subject": "CN=www.example.com",
+        "spki_sha256": "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3",
+        "days_remaining": 66
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "AkamaiGHost",
+          "x-rq": "lhr3 0 40 9980",
+          "content-type": "text/html"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "www.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "akamai",
+    "min_band": "HIGH",
+    "note": "strong global CDN edge (netblock + cname + cert + server) with a weak platform header (WordPress VIP) — the weak candidate is an ALTERNATIVE edge, never the primary"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "observations": {
+    "host": "www.example.co.kr",
+    "hostport": "www.example.co.kr:443",
+    "port": 443,
+    "ips": ["203.0.113.21"],
+    "cname": ["www.example.co.kr.gslb12.sakura.ne.jp"],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Example CA",
+      "subject": "CN=www.example.co.kr",
+      "spki_sha256": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+      "days_remaining": 80
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Example CA",
+        "subject": "CN=www.example.co.kr",
+        "spki_sha256": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+        "days_remaining": 80
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "nginx/1.24.0",
+          "content-type": "text/html"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "www.example.co.kr"
+      }
+    }
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "sakura",
+    "min_band": "LOW",
+    "max_band": "LOW",
+    "layers": [
+      "nginx"
+    ],
+    "note": "CNAME-only regional edge (sakura GSLB) — distinctive DNS delegation carries the attribution; the nginx origin is a layer"
+  }
+}

@@ -153,6 +153,56 @@ Every new vendor/signature follows this process:
 Adding a signature is a claim about attribution, not merely a record that
 a string was observed.
 
+## Verification methodology (passive vs --verify)
+
+w4f has two intentional detection modes; keep their evidence strictly
+separate.
+
+**Passive mode** (default) observes DNS / A-AAAA / CNAME / PTR / IP
+ownership / TLS / cert issuer-SAN / SPKI / the normal HTTP response /
+headers / cookies / redirects / passive refusal indicators. It never sends
+anything but one SNI handshake and one GET.
+
+**Verification mode (`--verify`)** sends ONE controlled probe
+(`verify_block()`: a script-tag + `OR '1'='1'` query string) and matches
+the response against the block-page table. It exists because some WAFs are
+intentionally silent to normal traffic (AWS WAF behind CloudFront is the
+canonical case) and cannot be identified passively. Use it only when:
+
+- the WAF/signature is documented as requiring verification, or
+- passive evidence is insufficient, and
+- the target is appropriate for controlled verification.
+
+Verification must stay narrowly scoped to identifying the defensive
+control: no exploit payloads, no WAF-evasion logic, no destructive or
+fuzz testing. Do NOT remove, weaken, or bypass `--verify`; do NOT label a
+silent WAF "absent" merely because the passive scan is quiet when --verify
+can establish its presence.
+
+**Provenance is a first-class field.** Every block result carries
+`source: "passive"` (a refusal page the edge handed us) or
+`source: "verify"` (a page our probe provoked). Consumers must never
+confuse the two, and a verified page must not silently become passive
+evidence.
+
+**Terminology:**
+
+- **observation** — a raw fact collected (an IP, a header, a CNAME).
+- **passive evidence** — an observation used for attribution.
+- **verification evidence** — a provoked block/challenge response; a
+  separate dimension that may be decisive for silent WAFs.
+- **attribution** — the interpretation: state + primary candidate.
+- **layer** — an origin component underneath a real edge (never a rival).
+- **alternative** — a weaker competing EDGE candidate (a rival claim).
+- **interception** — a middlebox on the SCANNER's path; never the target's
+  edge.
+
+The promotion flow therefore runs: research → collect passive evidence →
+assess whether --verify is required → collect controlled verification
+evidence when appropriate → classify evidence strength/provenance → check
+shared infrastructure / collision risk → positive test → negative/collision
+test → PROMOTE / PASSIVE-ONLY / UNKNOWN / REJECT.
+
 ## Known traps (kept for the next reader)
 
 1. **`getaddrinfo` canonical-name fallback** must use `info[3]` (canonname),

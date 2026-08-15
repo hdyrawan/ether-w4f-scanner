@@ -1,0 +1,46 @@
+{
+  "observations": {
+    "host": "www.example.com",
+    "hostport": "www.example.com:443",
+    "port": 443,
+    "ips": ["198.51.100.20"],
+    "cname": [],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Example CA",
+      "subject": "CN=www.example.com",
+      "spki_sha256": "f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7",
+      "days_remaining": 45
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Example CA",
+        "subject": "CN=www.example.com",
+        "spki_sha256": "f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7",
+        "days_remaining": 45
+      },
+      "http": {
+        "status": "HTTP/1.1 403 Forbidden",
+        "headers": {
+          "server": "nginx/1.24.0",
+          "content-type": "text/html"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "www.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "nginx",
+    "min_band": "LOW",
+    "max_band": "LOW",
+    "note": "verification-NEGATIVE case: the 403 is a refusal but its generic page matches no block signature — a refusal is NOT a WAF block, and the origin attribution stands"
+  }
+}

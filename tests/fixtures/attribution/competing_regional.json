@@ -1,0 +1,46 @@
+{
+  "observations": {
+    "host": "media.example.co.kr",
+    "hostport": "media.example.co.kr:443",
+    "port": 443,
+    "ips": ["203.0.113.55"],
+    "cname": ["media.example.co.kr.kgslb.com"],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Example CA",
+      "subject": "CN=media.example.co.kr",
+      "spki_sha256": "f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5",
+      "days_remaining": 30
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Example CA",
+        "subject": "CN=media.example.co.kr",
+        "spki_sha256": "f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5",
+        "days_remaining": 30
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "nfront",
+          "content-type": "text/html"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "media.example.co.kr"
+      }
+    }
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "kakao",
+    "min_band": "LOW",
+    "max_band": "LOW",
+    "note": "two competing REGIONAL edge candidates: Kakao GSLB CNAME (stronger) beats the Naver nfront header (weak) — the loser stays an alternative edge"
+  }
+}

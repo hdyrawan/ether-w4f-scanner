@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.40
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.41
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)

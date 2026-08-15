@@ -1,0 +1,49 @@
+{
+  "observations": {
+    "host": "api.example.com",
+    "hostport": "api.example.com:443",
+    "port": 443,
+    "ips": ["13.35.0.5"],
+    "cname": ["api.example.com.cloudfront.net"],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Amazon",
+      "issuer": "O=Amazon",
+      "subject": "CN=api.example.com",
+      "spki_sha256": "f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6",
+      "days_remaining": 70
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Amazon",
+        "issuer": "O=Amazon",
+        "subject": "CN=api.example.com",
+        "spki_sha256": "f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6",
+        "days_remaining": 70
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "CloudFront",
+          "x-cache": "Hit from cloudfront",
+          "content-type": "application/json"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "api.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "aws-cloudfront",
+    "min_band": "MEDIUM",
+    "max_band": "MEDIUM",
+    "note": "passive-silent WAF behind the edge: CloudFront answers a normal GET with 200 (no aws-waf signal) — aws-waf is intentionally silent to passive probes and requires --verify, so its ABSENCE here is not evidence the WAF is absent"
+  }
+}

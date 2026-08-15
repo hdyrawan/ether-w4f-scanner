@@ -1,0 +1,46 @@
+{
+  "observations": {
+    "host": "bank.example.com",
+    "hostport": "bank.example.com:443",
+    "port": 443,
+    "ips": ["23.45.1.9"],
+    "cname": ["bank.example.com.cdn.cloudflare.net"],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Cloudflare, Inc.",
+      "issuer": "O=Cloudflare, Inc.",
+      "subject": "CN=bank.example.com",
+      "spki_sha256": "f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+      "days_remaining": 40
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Cloudflare, Inc.",
+        "issuer": "O=Cloudflare, Inc.",
+        "subject": "CN=bank.example.com",
+        "spki_sha256": "f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+        "days_remaining": 40
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "AkamaiGHost",
+          "content-type": "text/html"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "bank.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "AMBIGUOUS",
+    "vendor": null,
+    "note": "network ownership says Akamai (netblock + server), DNS delegation + cert say Cloudflare — the two strongest categories disagree, so the tie is reported instead of picking the higher score"
+  }
+}

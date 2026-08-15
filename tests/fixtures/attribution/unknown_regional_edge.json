@@ -1,0 +1,42 @@
+{
+  "observations": {
+    "host": "bank.example.co.kr",
+    "hostport": "bank.example.co.kr:443",
+    "port": 443,
+    "ips": ["203.0.113.66"],
+    "cname": ["bank.example.co.kr.edge.unknowncdn.co.kr"],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Example CA",
+      "subject": "CN=bank.example.co.kr",
+      "spki_sha256": "f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8",
+      "days_remaining": 60
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Example CA",
+        "subject": "CN=bank.example.co.kr",
+        "spki_sha256": "f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8",
+        "days_remaining": 60
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "content-type": "text/html"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "bank.example.co.kr"
+      }
+    }
+  },
+  "expected": {
+    "state": "UNKNOWN",
+    "note": "unknown regional edge: a CNAME to an unrecognised domestic CDN brand with no other signals — a correct UNKNOWN is better than guessing a vendor"
+  }
+}
