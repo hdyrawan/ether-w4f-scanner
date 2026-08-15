@@ -1,0 +1,51 @@
+{
+  "observations": {
+    "host": "api.example.com",
+    "hostport": "api.example.com:443",
+    "port": 443,
+    "ips": [
+      "104.18.1.79"
+    ],
+    "cname": [
+      "api.example.com.cdn.cloudflare.net"
+    ],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Cloudflare, Inc.",
+      "issuer": "O=Cloudflare, Inc.",
+      "subject": "CN=api.example.com",
+      "spki_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "days_remaining": 73
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Cloudflare, Inc.",
+        "issuer": "O=Cloudflare, Inc.",
+        "subject": "CN=api.example.com",
+        "spki_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "days_remaining": 73
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "cloudflare",
+          "cf-ray": "9a2b4f55b2f67d43-SIN"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "api.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "cloudflare",
+    "min_band": "HIGH",
+    "note": "network + cname + cert + http all agree"
+  }
+}

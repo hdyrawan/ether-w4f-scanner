@@ -214,7 +214,7 @@ def _risk_rank(r: dict) -> int:
     error → block page → mTLS → unknown edge → header-only (spoofable)
     verdict → everything confidently identified.
     """
-    from w4f.report import _is_weak
+    from w4f.attribution import is_weak
     if r.get("error"):
         return 0
     if r.get("block"):
@@ -224,7 +224,7 @@ def _risk_rank(r: dict) -> int:
     ver = r.get("verdict") or []
     if not ver:
         return 3
-    if _is_weak(ver[0]):
+    if is_weak(ver[0].get("categories")):
         return 4
     return 5
 

@@ -34,6 +34,10 @@ Each verdict entry carries both forms:
   the category is already known so nothing downstream has to re-parse a
   formatted string
 
+`attribution.evidence` groups those into `{category, label, details}` where
+`details` is a **list** — one observation per entry, so a reader sees each
+fact on its own line instead of a run-on string.
+
 ## 3. Attribution — what it adds up to
 
 `attribution.attribute(result)` reads a finished result and returns the
@@ -48,7 +52,8 @@ interpretation, stored on the result as `attribution`:
 | `basis` | the categories behind the score |
 | `role` | `edge` (sits in front) or `origin` (the stack being fronted) |
 | `deployment` | `cloud` / `on-prem` / `origin`, when the vendor declares one |
-| `alternatives` | other candidates, weaker or underneath |
+| `alternatives` | competing **edge** candidates, weaker than the primary |
+| `layers` | candidates *underneath* the edge (origin stacks) — the stack, not rivals |
 | `candidates` | on `AMBIGUOUS`, the candidates that could not be separated |
 | `evidence` | the primary's evidence, grouped by category |
 | `observations` | on `UNKNOWN` / `INTERCEPTED`, the raw facts |
@@ -85,24 +90,63 @@ Precedence is deliberate:
    handshake, so a host that timed out but returned a vendor CNAME stays
    `ATTRIBUTED` with the error alongside it — a connect failure does not
    make the CNAME untrue.
-3. **Only edge candidates compete.** An origin layer under a real edge
-   (`imperva` in front of `nginx`) is a *layer*, not a rival claim, so it
-   never triggers `AMBIGUOUS`. The role comes from the vendor's declared
-   `deployment`, falling back to the signature table for older result trees.
+3. **Only edge candidates compete, and layers are not alternatives.** An
+   origin under a real edge (`cloudflare` in front of `varnish`) is a
+   *layer*, not a rival claim: it never triggers `AMBIGUOUS`, and it is
+   reported in `layers` rather than `alternatives`. The role comes from the
+   `deployment` the vendors already declare — no second model — falling back
+   to the signature table for older result trees.
 
 ## Output
 
 Default stays concise and decision-oriented — the state, the vendor with its
-confidence band and score, the basis, and the response facts a decision
-needs next (path, cert, SAN, pin).
+confidence band and score, the basis, the `layer` chain when the edge fronts
+an origin, and the response facts a decision needs next (path, cert, SAN,
+TLS, SPKI).
 
-`--verbose` is the analytical view: an `EDGE` section naming the call, an
-`EVIDENCE` section listing what supports it grouped by category label
-(`Network`, `Certificate`, `CNAME`, `PTR`, `HTTP`, `Cookie`), and an
-`ALTERNATIVES` section for what else was in play. Scores appear as one
-number per candidate — never as the arithmetic that produced them.
+`--verbose` is the analytical view, in four sections:
+
+- `EDGE` — the call, with its confidence band and basis
+- `EVIDENCE` — one category heading (`Network`, `Certificate`, `CNAME`,
+  `PTR`, `HTTP`, `Cookie`) and one observation per line beneath it
+- `LAYER` — the stack the edge fronts, drawn as a stack
+- `ALTERNATIVES` — competing **edge** candidates only
+
+Scores appear as one number per candidate — never as the arithmetic that
+produced them.
 
 Machine outputs carry the state too: `--csv` appends a `state` column
 (appended, so existing column indexes stay valid) and `--sarif` reports
 `state` / `confidence_band` in properties, with an intercepted host filed
 under `w4f/interception` rather than the target's vendor rule.
+
+## Weak evidence
+
+`HARD_CATEGORIES` (`netblock`, `cert`, `cname`, `ptr`) are the ones an origin
+cannot fabricate by echoing a header. `is_weak(basis)` is true when a basis
+rests only on the rest, and the console marks those *headers only —
+spoofable*. This notion lives here, with the model, rather than being
+restated in the renderer.
+
+## Validation corpus
+
+`tests/fixtures/attribution/` holds sanitized fixtures — **observations
+only**, so each case runs the real pipeline (signature matching, then
+interpretation) instead of pre-baked verdicts. A signature change that
+quietly breaks attribution fails there.
+
+Covered: strong multi-category attribution, partial connectivity (DNS
+survives a failed handshake), weak header-only attribution, ambiguous
+competing edges, unknown, interception, edge-over-origin layering, and a
+host error with nothing surviving.
+
+`test_attribution_corpus.py` also tallies outcomes — correct, ambiguous,
+unknown, intercepted, error, and **incorrect** (a confident answer that is
+wrong, the failure mode that matters most). The corpus is deliberately
+small: it is a regression and quality harness, and the tally makes no
+statistical claim about the internet at large.
+
+Everything in it is synthetic: RFC 5737 documentation addresses, `example.*`
+names, and published vendor infrastructure (the netblocks and CNAME suffixes
+the signatures match on). No private or proprietary target data is stored in
+this repository.

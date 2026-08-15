@@ -1,0 +1,52 @@
+{
+  "observations": {
+    "host": "shop.example.net",
+    "hostport": "shop.example.net:443",
+    "port": 443,
+    "ips": [
+      "104.18.1.79"
+    ],
+    "cname": [
+      "d111111abcdef8.cloudfront.net"
+    ],
+    "ptr": [
+      "server-1-2-3-4.sin2.r.cloudfront.net"
+    ],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Amazon",
+      "issuer": "O=Amazon",
+      "subject": "CN=shop.example.net",
+      "spki_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "days_remaining": 60
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Amazon",
+        "issuer": "O=Amazon",
+        "subject": "CN=shop.example.net",
+        "spki_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "days_remaining": 60
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "cloudflare",
+          "x-amz-cf-id": "abc123"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "shop.example.net"
+      }
+    }
+  },
+  "expected": {
+    "state": "AMBIGUOUS",
+    "vendor": null,
+    "note": "address range says one vendor, DNS delegation says another \u2014 reported side by side instead of picking the higher score"
+  }
+}

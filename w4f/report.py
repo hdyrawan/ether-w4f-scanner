@@ -78,11 +78,10 @@ VENDOR_COLORS: dict[str, str] = {
 _VENDOR_PREFIX_COLORS: list[tuple[str, str]] = [
     ("aws-", _CYAN), ("azure-", _BRIGHT_BLUE), ("tencent-", _BRIGHT_MAGENTA),
 ]
-# Plain origin stacks are DIM (they are the origin, not the edge).
-_ORIGIN_VENDORS = {
-    "nginx", "apache", "iis", "caddy", "litespeed", "varnish",
-    "envoy", "haproxy", "tengine", "openresty", "sgw",
-}
+# Plain origin stacks are DIM (they are the origin, not the edge). The list
+# used to be hand-maintained here and had already drifted from the signature
+# table (it was missing aws-ec2); the vendors declare `deployment` now, so
+# that is the single source of truth.
 
 _LABEL = 10  # column width for the left-hand label
 
@@ -111,7 +110,7 @@ def _vendor_color(vendor: str) -> str:
         return ""
     if vendor in VENDOR_COLORS:
         return VENDOR_COLORS[vendor]
-    if vendor in _ORIGIN_VENDORS:
+    if ATT.role_of({"vendor": vendor}) == "origin":
         return _DIM
     for prefix, color in _VENDOR_PREFIX_COLORS:
         if vendor.startswith(prefix):
@@ -134,12 +133,8 @@ def _row2(label: str, value: str) -> str:
 # is ownership evidence, "hdr" alone is a string anyone can set.
 _CAT_ABBR = {
     "netblock": "net", "cert": "cert", "cname": "cname",
-    "ptr": "ptr", "headers": "hdr", "cookies": "cookie",
+    "ptr": "ptr", "headers": "http", "cookies": "cookie",
 }
-# Categories the origin cannot fake by echoing a header.
-_HARD_CATS = {"netblock", "cert", "cname", "ptr"}
-
-
 def _basis(m: dict) -> str:
     """``"net+cert+hdr"`` — the signal categories behind one verdict.
 
@@ -149,12 +144,6 @@ def _basis(m: dict) -> str:
     """
     cats = m.get("categories") or []
     return "+".join(_CAT_ABBR.get(c, c) for c in cats) or "-"
-
-
-def _is_weak(m: dict) -> bool:
-    """True when a verdict rests ONLY on headers/cookies (spoofable)."""
-    cats = set(m.get("categories") or [])
-    return bool(cats) and not (cats & _HARD_CATS)
 
 
 def _attribution(r: dict) -> dict:
@@ -533,7 +522,8 @@ def fmt_summary_table(results: list[dict]) -> str:
                 cell = _wrap(val, _BOLD + _vendor_color(ver[0]["vendor"])) if ver \
                     else _wrap(val, _DIM)
             elif key == "basis":
-                cell = _wrap(val, _DIM if not (ver and _is_weak(ver[0])) else _YELLOW)
+                cell = _wrap(val, _YELLOW if (ver and ATT.is_weak(ver[0].get("categories")))
+                             else _DIM)
             elif key == "notes":
                 cell = "  ".join(_wrap(t, c) for t, c in _flag_tokens(r))
                 if len(val) > 44:  # was truncated for width math
@@ -672,13 +662,19 @@ def fmt_compact_block(r: dict) -> str:
     if att.get("deployment"):
         basis += f"   ({att['deployment']})"
     suffix = ""
-    if att.get("basis") and not (set(att["basis"]) & _HARD_CATS):
+    if ATT.is_weak(att.get("basis")):
         suffix = _wrap("   (headers only — spoofable)", _YELLOW)
     lines.append("  " + _wrap(basis, _DIM) + suffix)
+    layers = att.get("layers") or []
+    if layers:
+        # the stack, not a competing claim: edge -> what it fronts
+        chain = " → ".join([att.get("vendor", "?")]
+                           + [ly.get("vendor", "?") for ly in layers])
+        lines.append(_row2("layer", _wrap(chain, _DIM)))
     for alt in att.get("alternatives") or []:
-        role = f"  ({alt['role']})" if alt.get("role") == "origin" else ""
-        lines.append(_wrap(f"    {alt.get('vendor', '?')}  {alt.get('score', 0)}{role}",
-                           _DIM))
+        lines.append(_row2("alt", _wrap(
+            f"{alt.get('vendor', '?')}  {alt.get('confidence') or '?'} "
+            f"{alt.get('score', 0)}", _DIM)))
     if att.get("error"):
         # evidence survived a failed probe — show both, not one or the other
         lines.append(_row2("error", _wrap(str(att["error"])[:80], _CRIT)))
@@ -700,8 +696,6 @@ def _context_rows(r: dict) -> list[str]:
     status = _status_code(r)
     if status != "-":
         chain_bits.append(status)
-    if _tls_cell(r) != "-":
-        chain_bits.append(f"TLS{_tls_cell(r)}")
     if chain_bits:
         lines.append(_row2("path", " · ".join(chain_bits)))
     cert_bits = []
@@ -726,8 +720,10 @@ def _context_rows(r: dict) -> list[str]:
             f"TLS intercepted by {icept.get('by', '?')} between w4f and the "
             f"target ({icept.get('evidence', '')}) — cert and pin are the "
             f"middlebox's, NOT this host's", _CRIT)))
+    if _tls_cell(r) != "-":
+        lines.append(_row2("TLS", _tls_cell(r)))
     if cert.get("spki_sha256"):
-        lines.append(_row2("pin", _wrap(f"spki {cert['spki_sha256'][:16]}…", _DIM)))
+        lines.append(_row2("SPKI", _wrap(cert["spki_sha256"][:16] + "…", _DIM)))
     return lines
 
 
@@ -773,9 +769,8 @@ def _analysis_sections(att: dict, r: dict) -> list[str]:
         for cand in att.get("candidates") or []:
             out.append(_candidate_line(cand, indent="  "))
             out.append("  " + _wrap(f"  {_basis_pretty(cand.get('basis'))}", _DIM))
-            out.append("  EVIDENCE")
-            for ev in cand.get("evidence") or []:
-                out.append(f"    {ev.get('label', ''):<14}{ev.get('detail', '')[:80]}")
+            for line in _evidence_section(cand.get("evidence")):
+                out.append("  " + line if line else line)
         return out
 
     # ATTRIBUTED
@@ -789,21 +784,42 @@ def _analysis_sections(att: dict, r: dict) -> list[str]:
     out.append("  " + _wrap(f"  {detail}", _DIM))
     if att.get("error"):
         out.append(_row2("", _wrap(f"probe error: {att['error']}", _CRIT)))
-    evidence = att.get("evidence") or []
-    if evidence:
+    out.extend(_evidence_section(att.get("evidence")))
+    layers = att.get("layers") or []
+    if layers:
+        # LAYER is the stack the edge fronts — deliberately its own section
+        # so it can never read as a competing attribution
         out.append("")
-        out.append("EVIDENCE")
-        for ev in evidence:
-            label = ev.get("label") or ""
-            out.append(f"  {label:<14}{ev.get('detail', '')[:90]}")
+        out.append("LAYER")
+        out.append(f"  {att.get('vendor', '?')}")
+        for ly in layers:
+            out.append(_wrap("      ↓", _DIM))
+            out.append(f"  {ly.get('vendor', '?')}")
     alts = att.get("alternatives") or []
     if alts:
         out.append("")
         out.append("ALTERNATIVES")
         for alt in alts:
-            role = f"   ({alt['role']})" if alt.get("role") == "origin" else ""
-            out.append(_candidate_line(alt, indent="  ") + _wrap(role, _DIM))
+            out.append(_candidate_line(alt, indent="  "))
             out.append("  " + _wrap(f"  {_basis_pretty(alt.get('basis'))}", _DIM))
+    return out
+
+
+def _evidence_section(evidence) -> list[str]:
+    """EVIDENCE, one category per heading and one observation per line.
+
+    Grouping by category is the analytical point: a verdict resting on a
+    netblock and a certificate is a different claim from one resting on a
+    header, and that difference is what a reader has to weigh.
+    """
+    if not evidence:
+        return []
+    out = ["", "EVIDENCE"]
+    for ev in evidence:
+        label = ev.get("label") or "Other"
+        out.append(f"  {label}")
+        for detail in ev.get("details") or []:
+            out.append(_wrap(f"    {detail[:88]}", _DIM))
     return out
 
 
@@ -824,7 +840,7 @@ def fmt_rollup(results: list[dict], elapsed: float | None = None) -> str:
         ver = r.get("verdict") or []
         if ver:
             counts[ver[0]["vendor"]] = counts.get(ver[0]["vendor"], 0) + 1
-            if _is_weak(ver[0]):
+            if ATT.is_weak(ver[0].get("categories")):
                 weak += 1
         elif not r.get("error"):
             unknown.append(r["hostport"])

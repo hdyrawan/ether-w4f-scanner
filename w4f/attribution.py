@@ -53,6 +53,18 @@ MEDIUM_AT = 30
 AMBIGUITY_MARGIN = 8
 AMBIGUITY_FLOOR = MEDIUM_AT
 
+# Categories the origin cannot fabricate by echoing a header: ownership of
+# an address range, a certificate, or a DNS delegation. A verdict resting
+# only on the rest is a string anyone can set.
+HARD_CATEGORIES = frozenset({"netblock", "cert", "cname", "ptr"})
+
+
+def is_weak(basis) -> bool:
+    """True when a basis rests ONLY on spoofable categories."""
+    cats = set(basis or [])
+    return bool(cats) and not (cats & HARD_CATEGORIES)
+
+
 # Human labels for the signal categories, used by the verbose EVIDENCE block.
 CATEGORY_LABELS = {
     "netblock": "Network",
@@ -116,8 +128,7 @@ def evidence_for(match: dict) -> list[dict]:
     """
     items = match.get("evidence_items")
     if not items:
-        return [{"category": "", "label": "", "detail": d}
-                for d in (match.get("evidence") or [])]
+        return [{"category": "", "label": "", "details": list(match.get("evidence") or [])}]
     order = {c: i for i, c in enumerate(CATEGORY_LABELS)}
     grouped: dict[str, list[str]] = {}
     for item in items:
@@ -127,7 +138,7 @@ def evidence_for(match: dict) -> list[dict]:
         out.append({
             "category": cat,
             "label": CATEGORY_LABELS.get(cat, cat or "?"),
-            "detail": " · ".join(d for d in grouped[cat] if d),
+            "details": [d for d in grouped[cat] if d],
         })
     return out
 
@@ -184,6 +195,7 @@ def attribute(result: dict) -> dict:
         "basis": [],
         "role": None,
         "alternatives": [],
+        "layers": [],
         "evidence": [],
     }
     if result.get("error"):
@@ -213,7 +225,9 @@ def attribute(result: dict) -> dict:
     if len(tied) > 1:
         attribution["state"] = STATE_AMBIGUOUS
         attribution["candidates"] = tied
-        attribution["alternatives"] = [c for c in candidates if c not in tied]
+        rest_amb = [c for c in candidates if c not in tied]
+        attribution["alternatives"] = [c for c in rest_amb if c["role"] == "edge"]
+        attribution["layers"] = [c for c in rest_amb if c["role"] == "origin"]
         # evidence for each tied candidate, so the reader can break the tie
         by_vendor = {m.get("vendor"): m for m in verdict}
         for cand in tied:
@@ -228,14 +242,19 @@ def attribute(result: dict) -> dict:
     attribution["role"] = primary["role"]
     if primary.get("deployment"):
         attribution["deployment"] = primary["deployment"]
-    attribution["alternatives"] = rest
+    # An origin under a real edge is a LAYER of the stack, not a rival claim
+    # about the edge. Keeping them in one "alternatives" list invited exactly
+    # the misreading this split removes.
+    attribution["alternatives"] = [c for c in rest if c["role"] == "edge"]
+    attribution["layers"] = [c for c in rest if c["role"] == "origin"]
     attribution["evidence"] = evidence_for(verdict[0])
     return attribution
 
 
 __all__ = [
-    "CATEGORY_LABELS", "HIGH", "LOW", "MEDIUM",
+    "CATEGORY_LABELS", "HARD_CATEGORIES", "HIGH", "LOW", "MEDIUM",
     "STATE_AMBIGUOUS", "STATE_ATTRIBUTED", "STATE_ERROR",
     "STATE_INTERCEPTED", "STATE_UNKNOWN",
-    "attribute", "confidence_band", "evidence_for", "observations", "role_of",
+    "attribute", "confidence_band", "evidence_for", "is_weak", "observations",
+    "role_of",
 ]

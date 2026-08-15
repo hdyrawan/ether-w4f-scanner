@@ -112,7 +112,7 @@ class TestVendorColors:
         ]
         lines = [ln for ln in fmt_compact_block(r).splitlines() if ln.strip()]
         assert "imperva" in lines[1]
-        assert any("nginx" in ln and "(origin)" in ln for ln in lines)
+        assert any("nginx" in ln and "layer" in ln for ln in lines)
 
 
 def _results_fixture():
@@ -166,8 +166,8 @@ class TestSummaryTable:
     def test_basis_column_names_signal_categories(self):
         from w4f.report import fmt_summary_table
         out = fmt_summary_table(self._results())
-        assert "net+cert+cname+hdr" in out   # cloudflare host
-        assert "net+hdr" in out              # imperva host
+        assert "net+cert+cname+http" in out  # cloudflare host
+        assert "net+http" in out             # imperva host
 
     def test_secondary_vendor_count_marked(self):
         from w4f.report import fmt_summary_table
@@ -222,17 +222,18 @@ class TestCompactBlock:
         assert "api.example.com:443" in out
         assert "cloudflare" in out
         assert "HIGH" in out and "82" in out          # band first, score after
-        assert "net + cert + cname + hdr" in out      # basis, spaced
+        assert "net + cert + cname + http" in out     # basis, spaced
 
     def test_block_adds_facts_the_table_lacks(self):
         # the block carries what the table row cannot: path, cert, pin.
         # Raw evidence strings moved to --verbose (the analytical view).
         from w4f.report import fmt_compact_block
         out = fmt_compact_block(_result_with_verdict())
-        assert "200" in out and "TLS1.3 h2" in out     # path
+        assert "200" in out                            # path
+        assert "1.3 h2" in out                         # TLS row
         assert "Example CA" in out and "100d left" in out
         assert "chain verified" in out
-        assert "spki aaaa" in out                      # pin (truncated)
+        assert "SPKI" in out and "aaaa" in out         # pin (truncated)
 
     def test_san_shown_in_triage_view(self):
         # the cert's scope (sibling hosts, wildcard reach) is triage material,
@@ -260,11 +261,14 @@ class TestCompactBlock:
         r["tls"]["cert"].pop("san", None)
         assert "\n  san" not in fmt_compact_block(r)
 
-    def test_alternatives_listed_under_the_primary(self):
+    def test_layer_is_shown_separately_from_alternatives(self):
+        # an origin under the edge is a LAYER of the stack, never presented
+        # as a competing edge vendor
         from w4f.report import fmt_compact_block
         out = fmt_compact_block(_results_fixture()[1])
         assert "imperva" in out
-        assert "nginx" in out and "(origin)" in out
+        assert "layer" in out and "nginx" in out
+        assert "alternative" not in out.lower()
 
     def test_weak_verdict_marked(self):
         from w4f.report import fmt_compact_block

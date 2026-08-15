@@ -1,0 +1,19 @@
+{
+  "observations": {
+    "host": "dead.example.io",
+    "hostport": "dead.example.io:443",
+    "port": 443,
+    "ips": [],
+    "cname": [],
+    "ptr": [],
+    "error": "DNS did not resolve",
+    "chain_verified": true,
+    "cert": {},
+    "tls": {}
+  },
+  "expected": {
+    "state": "ERROR",
+    "vendor": null,
+    "note": "never probed and nothing independent survived"
+  }
+}

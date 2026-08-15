@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.35
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.36
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -32,57 +32,54 @@ w4f --target-file hosts.txt
 ```
 
 ```
-HOST                    EDGE              CONF  BASIS               TLS     CERT               HTTP  NOTES
-api.example.com:443     cloudflare +1  HIGH 92  net+cname+cert+hdr  1.3 h2  Cloudflare 73d      200
-shop.example.net:443    AMBIGUOUS       MED 68  net+cert+hdr        1.3 h2  Cloudflare 73d      200
-edge.example.io:443     unknown              -  -                   1.3 h2  Let's Encrypt 40d   200
-origin.example.org:443  INTERCEPTED          -  -                   1.3 h2  Fortinet -168d      403  INTERCEPTED
+HOST                  EDGE              CONF  BASIS                       TLS     CERT               HTTP  NOTES
+www.example.com:443   cloudflare +2  HIGH 85  net+cert+cname+http+cookie  1.3 h2  Cloudflare 55d      200
+shop.example.net:443  AMBIGUOUS       MED 42  cname+ptr+http              1.3 h2  Amazon 60d          200
+edge.example.io:443   unknown              -  -                           1.3 h2  Let's Encrypt 40d   200
+inspected.example.org:443  INTERCEPTED          -  -                           1.3 h2  Fortinet -168d      403  INTERCEPTED
+www.example.net:443   akamai          LOW 20  cname                       -       -                     -  ERR connect failed: timed out
 
-api.example.com:443
-  cloudflare                    HIGH   92
-  net + cname + cert + hdr   (cloud)
-    nginx  7  (origin)
-  path    200 · TLS1.3 h2
-  cert    Cloudflare · 73d left · chain verified
-  san     api.example.com, *.example.com
-  pin     spki 7f3a91bbbbbbbbbb…
+www.example.com:443
+  cloudflare                    HIGH   85
+  net + cert + cname + http + cookie   (cloud)
+  layer   cloudflare → varnish
+  alt     cloudflare-waf  LOW 3
+  path    200
+  cert    Cloudflare · 55d left · chain verified
+  TLS     1.3 h2
+  SPKI    343d1536f3666f92…
 
 shop.example.net:443
   EDGE    AMBIGUOUS
-    cloudflare                    MEDIUM 68
-    aws-cloudfront                MEDIUM 64
+    aws-cloudfront                MEDIUM 42
+    cloudflare                    MEDIUM 37
   BASIS
-    cloudflare          net + cert + hdr
-    aws-cloudfront      net + cname + cert
-  path    200 · TLS1.3 h2
-  cert    Cloudflare · 73d left · chain verified
+    aws-cloudfront      cname + ptr + http
+    cloudflare          net + http
 
 edge.example.io:443
   EDGE    UNKNOWN
   OBSERVED
-    IP        203.0.113.10
+    IP        198.51.100.30
     CNAME     edge.provider.net
     TLS       1.3 h2
     Issuer    Let's Encrypt
-    SPKI      dddddddddddddddd…
     HTTP      acme-edge
   leads   server: acme-edge · x-acme-pop: sin1
 
-origin.example.org:443  INTERCEPTED
+inspected.example.org:443  INTERCEPTED
   EDGE    NOT DETERMINED
   PATH    INTERCEPTED by fortinet
           the identity below may belong to the interception device, not this host
   OBSERVED
-    IP        203.0.113.20
-    TLS       1.3 h2
+    IP        198.51.100.40
     Issuer    Fortinet
     SPKI      9701081eeeeeeeee…
-    HTTP      HTTP/1.1 403 Forbidden
 
-── 4 hosts · 3.4s ──────────────────────────────────────────────────────
-edges     cloudflare 1
-unknown   1  (edge.example.io:443)
-flags     errors 0
+www.example.net:443  ERR connect failed: timed out
+  akamai                        LOW    20
+  cname   (cloud)
+  error   connect failed: timed out
 ```
 
 `BASIS` is the column that decides whether to believe the row: `net+cert`
@@ -193,7 +190,7 @@ python3 -m pytest           # run the test suite
 ### Verify & uninstall
 
 ```bash
-w4f --version        # e.g. "w4f 0.1.35 — passive TLS / CDN / WAF / edge fingerprinting"
+w4f --version        # e.g. "w4f 0.1.36 — passive TLS / CDN / WAF / edge fingerprinting"
 w4f --help           # full usage
 pipx uninstall w4f   # or: uv tool uninstall w4f / pip uninstall w4f
 ```
@@ -397,6 +394,11 @@ them loses the decision:
 | `INTERCEPTED` | something on the **scanner's** path re-signed the connection; no vendor is attributed and the cert/pin may be the middlebox's |
 | error | the host could not be probed. A host that failed *but* resolved a vendor CNAME still reports that vendor — DNS resolves before the handshake |
 
+`layer` is the stack, not a rival: an origin underneath the edge
+(`cloudflare → varnish`) is reported as a **layer**, while `alt` lists only
+competing *edge* candidates. Presenting an origin as an alternative edge was
+the misreading this split removes.
+
 `CONF` is the confidence **band** first (`HIGH` ≥ 70, `MED` ≥ 30, `LOW`
 below) and the score second. The score is a sum of category weights, not a
 probability, so `HIGH` means several independent kinds of evidence agreed —
@@ -413,41 +415,52 @@ Add `-v` / `--verbose` for the analytical view — the same observations plus
 category, and the alternatives that were in play.
 
 ```
-$ w4f -v --target api.example.com
+$ w4f -v --target www.example.com
 
-api.example.com:443
+www.example.com:443
 ip        104.18.1.79
+cname     www.example.com.cdn.cloudflare.net
 tls       TLSv1.3  TLS_AES_256_GCM_SHA384  ALPN h2
 cert      Cloudflare, Inc.  (chain verified)
-  san     api.example.com, *.example.com
-  valid   2026-06-05 -> 2026-12-11  (73d left)
-  spki    7f3a91bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-  key     RSA 2048  sha256WithRSAEncryption
+  san     www.example.com, *.example.com
+  valid   2026-06-05 -> 2026-12-11  (55d left)
+  spki    343d1536f3666f92ea868d751d138dd8658d3020426b4de28801cb259f5bdde7
 http      HTTP/1.1 200 OK
-  chain   https://www.api.example.com/
-  final   www.api.example.com  (headers above are from here)
   hdr     server=cloudflare
-  hdr     cf-ray=9a2b4f55b2f67d43-SIN
+  hdr     x-varnish=1234567 7654321
 
 EDGE
-  cloudflare                    HIGH   92
-    net + cname + cert + hdr   (cloud)
+  cloudflare                    HIGH   85
+    net + cert + cname + http + cookie   (cloud)
 
 EVIDENCE
-  Network       104.18.1.79 in 104.16.0.0/13
-  Certificate   Cloudflare, Inc.
-  CNAME         api.example.com.cdn.cloudflare.net
-  HTTP          server: cloudflare · cf-ray: 9a2b4f55b2f67d43-SIN
+  Network
+    104.18.1.79 in 104.16.0.0/13
+  Certificate
+    Cloudflare, Inc.
+  CNAME
+    www.example.com.cdn.cloudflare.net
+  HTTP
+    server: cloudflare
+  Cookie
+    __cf_bm=xyz
+
+LAYER
+  cloudflare
+      ↓
+  varnish
 
 ALTERNATIVES
-  nginx                         LOW     7   (origin)
-    hdr
+  cloudflare-waf                LOW     3
+    cookie
 ```
 
-`EVIDENCE` groups by signal category, so it answers "what would have to be
-false for this to be wrong" — a verdict resting on a netblock and a cert is
-a different claim from one resting on a header. Scores appear as one number
-per candidate; the arithmetic behind them stays out of the output.
+`EVIDENCE` is one category per heading and one observation per line, so it
+answers "what would have to be false for this to be wrong" — a verdict
+resting on a netblock and a certificate is a different claim from one
+resting on a header. `LAYER` draws the stack the edge fronts; `ALTERNATIVES`
+holds only competing edges. Scores appear as one number per candidate; the
+arithmetic behind them stays out of the output.
 
 The `chain`/`final` rows matter more than they look: the apex is often a
 bare redirector and the WAF only sits on `www`, so they say which host the

@@ -1,0 +1,53 @@
+{
+  "observations": {
+    "host": "www.example.com",
+    "hostport": "www.example.com:443",
+    "port": 443,
+    "ips": [
+      "104.18.1.79"
+    ],
+    "cname": [
+      "www.example.com.cdn.cloudflare.net"
+    ],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Cloudflare, Inc.",
+      "subject": "CN=www.example.com",
+      "spki_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "days_remaining": 55
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Cloudflare, Inc.",
+        "subject": "CN=www.example.com",
+        "spki_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "days_remaining": 55
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "cloudflare",
+          "x-varnish": "1234567 7654321"
+        },
+        "set-cookie-list": [
+          "__cf_bm=xyz"
+        ],
+        "redirects": [],
+        "final_host": "www.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "cloudflare",
+    "layers": [
+      "varnish"
+    ],
+    "note": "the origin cache underneath is a LAYER of the stack, never a competing edge candidate"
+  }
+}

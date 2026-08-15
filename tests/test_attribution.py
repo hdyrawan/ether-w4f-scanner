@@ -92,14 +92,24 @@ class TestStrongAttribution:
         assert {e["category"] for e in att["evidence"]} == {"netblock", "cert"}
         assert [e["label"] for e in att["evidence"]] == ["Network", "Certificate"]
 
-    def test_origin_layer_is_an_alternative_not_a_rival(self):
+    def test_origin_is_a_layer_not_an_alternative(self):
+        # an origin under the edge belongs to the stack, not to the list of
+        # competing edge candidates
         r = _result([_match("imperva", 60, ["netblock", "headers"]),
                      _match("nginx", 7, ["headers"], "origin")])
         att = attribute(r)
         assert att["state"] == ATT.STATE_ATTRIBUTED
         assert att["vendor"] == "imperva"
-        assert [a["vendor"] for a in att["alternatives"]] == ["nginx"]
-        assert att["alternatives"][0]["role"] == "origin"
+        assert att["alternatives"] == []
+        assert [ly["vendor"] for ly in att["layers"]] == ["nginx"]
+        assert att["layers"][0]["role"] == "origin"
+
+    def test_weaker_edge_stays_an_alternative(self):
+        r = _result([_match("cloudflare", 82, ["netblock", "cert", "cname"]),
+                     _match("aws-cloudfront", 25, ["cert"])])
+        att = attribute(r)
+        assert [a["vendor"] for a in att["alternatives"]] == ["aws-cloudfront"]
+        assert att["layers"] == []
 
 
 class TestWeakAttribution:
@@ -229,7 +239,7 @@ class TestRoleAndObservations:
     def test_evidence_degrades_for_older_result_trees(self):
         # no evidence_items: keep the strings rather than raising
         out = evidence_for({"evidence": ["header server: x"]})
-        assert out and out[0]["detail"] == "header server: x"
+        assert out and out[0]["details"] == ["header server: x"]
 
     def test_observations_are_a_view_not_a_copy(self):
         r = _result([], cname=["x.example.net"])
@@ -268,15 +278,35 @@ class TestRendering:
             _match("cloudflare", 82, ["netblock", "cert", "cname"])]))
         assert "+30" not in out and "+25" not in out and "+20" not in out
 
-    def test_verbose_explains_with_evidence_and_alternatives(self):
+    def test_verbose_explains_with_grouped_evidence(self):
         r = _result([_match("imperva", 60, ["netblock", "headers"]),
                      _match("nginx", 7, ["headers"], "origin")])
         out = fmt_block(r)
         assert "EDGE" in out
         assert "EVIDENCE" in out
         assert "Network" in out            # category label, not "netblock"
-        assert "ALTERNATIVES" in out
+        assert "HTTP" in out
+        # one category per heading, one observation per line beneath it
+        lines = out.splitlines()
+        net = lines.index("  Network")
+        assert lines[net + 1].strip().startswith("netblock-detail")
+
+    def test_verbose_separates_layer_from_alternatives(self):
+        r = _result([_match("imperva", 60, ["netblock", "headers"]),
+                     _match("nginx", 7, ["headers"], "origin")])
+        out = fmt_block(r)
+        assert "LAYER" in out
+        assert "↓" in out                  # the stack, drawn as a stack
         assert "nginx" in out
+        assert "ALTERNATIVES" not in out   # an origin is not an alternative
+
+    def test_verbose_lists_a_competing_edge_as_an_alternative(self):
+        r = _result([_match("cloudflare", 82, ["netblock", "cert", "cname"]),
+                     _match("aws-cloudfront", 25, ["cert"])])
+        out = fmt_block(r)
+        assert "ALTERNATIVES" in out
+        assert "aws-cloudfront" in out
+        assert "LAYER" not in out
 
     def test_ambiguous_block_shows_both_candidates(self):
         out = fmt_compact_block(_result([

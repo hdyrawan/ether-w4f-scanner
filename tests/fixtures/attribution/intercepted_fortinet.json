@@ -1,0 +1,45 @@
+{
+  "observations": {
+    "host": "inspected.example.org",
+    "hostport": "inspected.example.org:443",
+    "port": 443,
+    "ips": [
+      "198.51.100.40"
+    ],
+    "cname": [],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Fortinet",
+      "issuer": "C=US, O=Fortinet, OU=Certificate Authority, CN=FG100D0000000000",
+      "subject": "CN=inspected.example.org",
+      "spki_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "days_remaining": -168
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Fortinet",
+        "issuer": "C=US, O=Fortinet, OU=Certificate Authority, CN=FG100D0000000000",
+        "subject": "CN=inspected.example.org",
+        "spki_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "days_remaining": -168
+      },
+      "http": {
+        "status": "HTTP/1.1 403 Forbidden",
+        "headers": {},
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "inspected.example.org"
+      }
+    }
+  },
+  "expected": {
+    "state": "INTERCEPTED",
+    "vendor": null,
+    "note": "cert issued by an inspection CA on the scanner's path"
+  }
+}

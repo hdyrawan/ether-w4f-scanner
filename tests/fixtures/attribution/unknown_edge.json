@@ -1,0 +1,48 @@
+{
+  "observations": {
+    "host": "edge.example.io",
+    "hostport": "edge.example.io:443",
+    "port": 443,
+    "ips": [
+      "198.51.100.30"
+    ],
+    "cname": [
+      "edge.provider.net"
+    ],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Let's Encrypt",
+      "subject": "CN=edge.example.io",
+      "spki_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "days_remaining": 40
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Let's Encrypt",
+        "subject": "CN=edge.example.io",
+        "spki_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "days_remaining": 40
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "acme-edge",
+          "x-acme-pop": "sin1"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "edge.example.io"
+      }
+    }
+  },
+  "expected": {
+    "state": "UNKNOWN",
+    "vendor": null,
+    "note": "fingerprintable headers, no signature \u2014 a signature lead"
+  }
+}

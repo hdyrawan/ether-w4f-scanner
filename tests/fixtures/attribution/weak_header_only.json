@@ -1,0 +1,46 @@
+{
+  "observations": {
+    "host": "origin.example.org",
+    "hostport": "origin.example.org:443",
+    "port": 443,
+    "ips": [
+      "198.51.100.20"
+    ],
+    "cname": [],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Let's Encrypt",
+      "subject": "CN=origin.example.org",
+      "spki_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "days_remaining": 30
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Let's Encrypt",
+        "subject": "CN=origin.example.org",
+        "spki_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "days_remaining": 30
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "nginx"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "origin.example.org"
+      }
+    }
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "nginx",
+    "max_band": "LOW",
+    "note": "header-only: a string the origin can set"
+  }
+}

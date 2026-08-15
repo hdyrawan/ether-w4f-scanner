@@ -1,0 +1,23 @@
+{
+  "observations": {
+    "host": "www.example.net",
+    "hostport": "www.example.net:443",
+    "port": 443,
+    "ips": [
+      "203.0.113.10"
+    ],
+    "cname": [
+      "www.example.net.edgekey.net"
+    ],
+    "ptr": [],
+    "error": "connect failed: timed out",
+    "chain_verified": true,
+    "cert": {},
+    "tls": {}
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "akamai",
+    "note": "handshake never established; the CNAME delegation still holds"
+  }
+}

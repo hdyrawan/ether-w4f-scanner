@@ -5,6 +5,71 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.36] — 2026-08-15
+
+Makes the 0.1.35 attribution model explainable to an analyst. No new
+dependencies, no new CLI flags, no scoring change, no new vendor signatures.
+
+**LAYER is not an ALTERNATIVE.** An origin under a real edge
+(`cloudflare → varnish`) was listed among the alternatives, which invited
+reading it as a competing edge vendor. `attribute()` now splits the two
+using the `deployment` the vendors already declare: `alternatives` holds
+competing **edge** candidates, `layers` holds what the edge fronts. The
+default block gains a `layer` row and `--verbose` a `LAYER` section drawn as
+a stack. A weaker *edge* candidate is still an alternative.
+
+**`EVIDENCE` is now readable as evidence.** One category per heading and one
+observation per line, instead of a run-on joined string:
+
+```
+EVIDENCE
+  Network
+    104.18.1.79 in 104.16.0.0/13
+  CNAME
+    www.example.com.cdn.cloudflare.net
+  HTTP
+    server: cloudflare
+```
+
+`attribution.evidence[]` therefore carries `details` (a list) in place of
+`detail` (a joined string) — the only shape change, in a field one release
+old.
+
+**Category naming.** The header category renders as `http` rather than
+`hdr`, matching the `HTTP` evidence label. Affects the console `BASIS` cell
+and the `basis` CSV column.
+
+**Default block** gains explicit `TLS` and `SPKI` rows (the pin was `pin`,
+and TLS was buried inside the `path` row).
+
+**Duplication removed** — the review the goal asked for found two copies of
+knowledge the model already owned:
+
+- `_ORIGIN_VENDORS`, a hand-maintained list of origin stacks in `report.py`,
+  had already drifted from the signature table (missing `aws-ec2`). Origin
+  colouring now reads the declared `deployment`.
+- `_HARD_CATS` / `_is_weak()` restated evidence strength in the renderer;
+  `attribution.HARD_CATEGORIES` / `is_weak()` own it, and `cli.py` uses it
+  for risk ordering.
+
+**Validation corpus** (`tests/fixtures/attribution/`, 8 fixtures). Each
+stores **observations only**, so a case runs the real pipeline — signature
+matching, then interpretation — rather than pre-baked verdicts; a signature
+change that quietly breaks attribution fails there. Covers strong
+multi-category attribution, partial connectivity (DNS survives a failed
+handshake), weak header-only attribution, ambiguous competing edges,
+unknown, interception, edge-over-origin layering, and a host error with
+nothing surviving. All synthetic: RFC 5737 addresses, `example.*` names, and
+the published vendor infrastructure the signatures match on.
+
+`test_attribution_corpus.py` tallies outcomes — correct, ambiguous, unknown,
+intercepted, error, and **incorrect** (a confident answer that is wrong).
+Current corpus: 4 correct / 1 ambiguous / 1 unknown / 1 intercepted /
+1 error / **0 incorrect**. Deliberately small — a regression harness, not a
+benchmark, and the tally makes no statistical claim.
+
+- +9 tests (372 total).
+
 ## [0.1.35] — 2026-08-15
 
 Evidence-based attribution. The scanner already separated *collecting* facts
