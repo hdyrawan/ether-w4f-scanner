@@ -1,6 +1,6 @@
 """azure-frontdoor — cdn vendor signature. See _template.py for the schema."""
 
-VENDOR = {'name': 'azure-frontdoor',
+VENDOR = {'name': 'azure-frontdoor', 'deployment': 'cloud',
  'headers': {'x-azure-ref': None,
              'server': 'azure-frontdoor|frontdoor',
              'x-cache': 'CONFIG_NOCACHE|CONFIG_CACHE'},

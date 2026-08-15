@@ -11,4 +11,4 @@ The banner is a bare 3-letter token with no version, so keep the match
 anchored (`^SGW(?:/|$)`); an unanchored substring match would collide with
 `nginx`-style banners containing "sgw" in a path value.
 """
-VENDOR = {'name': 'sgw', 'headers': {'server': '^SGW(?:/|$)'}}
+VENDOR = {'name': 'sgw', 'deployment': 'origin', 'headers': {'server': '^SGW(?:/|$)'}}

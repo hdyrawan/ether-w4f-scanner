@@ -1,6 +1,6 @@
 """fastly — cdn vendor signature. See _template.py for the schema."""
 
-VENDOR = {'name': 'fastly',
+VENDOR = {'name': 'fastly', 'deployment': 'cloud',
  'headers': {'server': 'fastly',
              'x-served-by': 'cache-',
              'x-timer': None,

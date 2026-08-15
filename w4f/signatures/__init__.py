@@ -28,8 +28,29 @@ import sys
 # Keys a vendor rule may carry. Everything else is a hard error.
 _ALLOWED_KEYS = {
     "name", "headers", "cookies", "cert", "cname", "ptr", "nets",
-    "requires", "weights",
+    "requires", "weights", "deployment", "block",
 }
+# Keys a `block` rule (the --verify / refusal-response block page) may carry.
+# Block pages used to live in a hardcoded if-chain inside scanner.py, which
+# meant adding one edited the matcher — breaking this package's promise that
+# a vendor is ONE file. They are declared here instead, per vendor.
+_BLOCK_KEYS = {
+    "title",         # regex, matched against the lowercased <title>
+    "body",          # list of markers, ALL must appear in the lowercased body
+    "body_any",      # list of markers, ANY may appear
+    "head",          # list of markers, ALL must appear in the lowercased head
+    "priority",      # lower runs first; specific rules must beat generic ones
+    "vendor",        # reported name when it differs from the signature name
+    "interception",  # True = a box on the SCANNER's path, not the target's edge
+    "deployment",    # which product variant this page identifies
+}
+# How the vendor sits in front of the origin. This decides which interception
+# route can work at all — a cloud edge is reached by DNS delegation/anycast
+# (SNI-based routing, the origin is elsewhere), an on-prem appliance sits on
+# the origin's own address. Optional: vendors sold BOTH ways (Imperva
+# Incapsula vs SecureSphere) must leave it unset and let the observed
+# evidence say which, rather than assert a default that is wrong half the time.
+_DEPLOYMENTS = {"cloud", "on-prem", "origin"}
 # Keys the fingerprint engine actually reads (in addition to the allowed set).
 _RULE_KEYS = _ALLOWED_KEYS - {"name"}
 # Signal kinds a ``requires`` spec may reference (must mirror scanner.py).
@@ -115,6 +136,37 @@ def _validate_vendor(v: dict) -> None:
         if w not in _WEIGHT_KINDS:
             raise SignatureError(
                 f"{name}: weights category {w!r} not in {sorted(_WEIGHT_KINDS)}")
+    if "deployment" in v and v["deployment"] not in _DEPLOYMENTS:
+        raise SignatureError(
+            f"{name}: deployment {v['deployment']!r} not in {sorted(_DEPLOYMENTS)}")
+    _validate_block(name, v.get("block"))
+
+
+def _validate_block(name: str, block) -> None:
+    """A vendor may carry one block rule or a list of them (Imperva ships a
+    cloud page AND an on-prem page; FortiWeb localizes its title)."""
+    if block is None:
+        return
+    rules = block if isinstance(block, list) else [block]
+    for rule in rules:
+        if not isinstance(rule, dict):
+            raise SignatureError(f"{name}: block rule must be a dict")
+        unknown = set(rule) - _BLOCK_KEYS
+        if unknown:
+            raise SignatureError(f"{name}: unknown block key(s) {sorted(unknown)} "
+                                 f"(allowed: {sorted(_BLOCK_KEYS)})")
+        if "title" in rule:
+            _validate_regex(f"{name}.block.title", rule["title"])
+        for key in ("body", "body_any", "head"):
+            if key in rule and not isinstance(rule[key], list):
+                raise SignatureError(f"{name}: block.{key} must be a list of markers")
+        if not any(k in rule for k in ("title", "body", "body_any", "head")):
+            raise SignatureError(f"{name}: block rule matches nothing "
+                                 f"(needs title/body/body_any/head)")
+        if "deployment" in rule and rule["deployment"] not in _DEPLOYMENTS:
+            raise SignatureError(
+                f"{name}: block deployment {rule['deployment']!r} "
+                f"not in {sorted(_DEPLOYMENTS)}")
 
 
 def load_signatures(package: str = __name__) -> dict[str, dict]:

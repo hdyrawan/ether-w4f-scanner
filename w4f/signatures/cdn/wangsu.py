@@ -9,6 +9,6 @@ the same string, so keying on it would mislabel every ChinaCache host.
 Observed on Chinese banking, government, media, and e-commerce hosts.
 """
 
-VENDOR = {'name': 'wangsu',
+VENDOR = {'name': 'wangsu', 'deployment': 'cloud',
  'headers': {'via': r'uproxy', 'x-via': r'uproxy'},
  'cname': r'wscdns\.com|wscvip\.cn|wswebpic\.com|wsglb\d*\.com'}

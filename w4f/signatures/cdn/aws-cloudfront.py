@@ -1,6 +1,6 @@
 """aws-cloudfront — cdn vendor signature. See _template.py for the schema."""
 
-VENDOR = {'name': 'aws-cloudfront',
+VENDOR = {'name': 'aws-cloudfront', 'deployment': 'cloud',
  'headers': {'server': 'cloudfront',
              'x-amz-cf-id': None,
              'x-amz-cf-pop': None,

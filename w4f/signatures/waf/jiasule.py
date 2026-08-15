@@ -6,7 +6,7 @@ visitor cookie. Customers CNAME to `*.vip.jiasule.org`.
 Observed on Chinese government and e-commerce hosts.
 """
 
-VENDOR = {'name': 'jiasule',
+VENDOR = {'name': 'jiasule', 'deployment': 'cloud',
  'headers': {'x-via-jsl': None},
  'cookies': [r'^__jsluid_s='],
  'cname': r'jiasule\.org'}

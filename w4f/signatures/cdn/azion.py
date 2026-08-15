@@ -7,5 +7,5 @@ NOTE: the `security=true` cookie Azion's Edge Firewall sets is NOT used as
 a signal — the name is too generic to stand alone.
 """
 
-VENDOR = {'name': 'azion',
+VENDOR = {'name': 'azion', 'deployment': 'cloud',
  'headers': {'x-azion-*': None}}

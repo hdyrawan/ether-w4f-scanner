@@ -1,6 +1,16 @@
 """imperva — cdn vendor signature. See _template.py for the schema."""
 
 VENDOR = {'name': 'imperva',
+ # Imperva ships TWO different block pages. SecureSphere (the on-prem
+ # appliance) answers 200 OK with <title>Error</title> + "The incident ID
+ # is", so only --verify reaches it and the generic title needs a body pair.
+ # Incapsula (cloud) is the incap_ses/incapsula shape. Observed directly.
+ 'block': [{'title': r'.*', 'body': ['incident id'],
+            'body_any': ["this page can't be displayed",
+                         'contact support for additional information'],
+            'deployment': 'on-prem', 'priority': 60},
+           {'body_any': ['incapsula'], 'deployment': 'cloud', 'priority': 61},
+           {'head': ['incap_ses'], 'deployment': 'cloud', 'priority': 62}],
  'headers': {'x-iinfo': None, 'x-cdn': 'incap', 'server': 'imperva'},
  'cookies': ['^incap_ses', '^visid_incap', '^incap_visid_'],
  'cert': 'imperva',

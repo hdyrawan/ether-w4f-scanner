@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.33
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.34
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -146,7 +146,7 @@ python3 -m pytest           # run the test suite
 ### Verify & uninstall
 
 ```bash
-w4f --version        # e.g. "w4f 0.1.33 — passive TLS / CDN / WAF / edge fingerprinting"
+w4f --version        # e.g. "w4f 0.1.34 — passive TLS / CDN / WAF / edge fingerprinting"
 w4f --help           # full usage
 pipx uninstall w4f   # or: uv tool uninstall w4f / pip uninstall w4f
 ```
@@ -285,7 +285,7 @@ $ w4f --target api.example.com --target shop.example.net --timeout 6
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
-  passive TLS / CDN / WAF / edge fingerprinting   v0.1.33
+  passive TLS / CDN / WAF / edge fingerprinting   v0.1.34
 
 HOST                    EDGE        CONF  BASIS               TLS     CERT                 HTTP  NOTES
 api.example.com:443     imperva +1   62%  net+cert+hdr        1.3 h2  Imperva Inc 64d       403  mTLS  BLOCK imperva
@@ -408,7 +408,8 @@ an entry there if it deserves its own hue.
 | WebSocket upgrade support (`--ws`) | RFC 6455 upgrade request |
 | gRPC health-check support (`--grpc`) | grpc.health.v1.Health/Check |
 | redirect chain + final host (apex → www) | one GET, up to 5 hops |
-| CDN/WAF verdict + matching evidence + confidence + signal categories | signature match |
+| CDN/WAF verdict + evidence + confidence + signal categories + cloud/on-prem | signature match |
+| `interception` — a TLS-inspection box on the scanner's own path | cert issuer / its refusal page |
 | `block` — WAF block page (vendor, title, status) | `--verify` active probe |
 
 ## Reading a verdict
@@ -492,7 +493,7 @@ serves plain nginx to normal requests). See
 
 ### Signature coverage
 
-**93 vendors** across six families — each one a file under
+**94 vendors** across seven families — each one a file under
 `w4f/signatures/` (copy `_template.py` to add one; see
 [`docs/vendor-signatures.md`](docs/vendor-signatures.md) for the
 contributor guide):
@@ -520,6 +521,10 @@ contributor guide):
 - **Platforms** (6): Google GFE, Wix Pepyaka, Squarespace, Azure App
   Service, ByteDance TLB, **WordPress VIP** (`x-rq` POP header +
   `go-vip.net` CNAME).
+- **Middleboxes** (1): **Fortinet WebFilter** — an appliance on the
+  *scanner's* own path, not the target's edge. Reported as `INTERCEPTED`
+  (never as a verdict) because a re-signed chain means the SPKI pin belongs
+  to the middlebox, not the host.
 
 Plus `--verify` block-page signatures for FortiWeb (EN + localized ID),
 F5 ASM, Cloudflare, Imperva and **AWS WAF** ("ERROR: The request could not

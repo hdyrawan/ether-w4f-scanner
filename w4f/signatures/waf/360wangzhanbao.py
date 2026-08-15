@@ -6,6 +6,6 @@ response with a `WZWS-RAY` header (WZWS = 网站卫士) and customers CNAME to
 Observed on Chinese government hosts.
 """
 
-VENDOR = {'name': '360wangzhanbao',
+VENDOR = {'name': '360wangzhanbao', 'deployment': 'cloud',
  'headers': {'wzws-ray': None},
  'cname': r'qaxcloudwaf\.com|icloudwaf\.com'}

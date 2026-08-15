@@ -1,3 +1,3 @@
 """keycdn — cdn vendor signature. See _template.py for the schema."""
 
-VENDOR = {'name': 'keycdn', 'headers': {'server': 'keycdn'}}
+VENDOR = {'name': 'keycdn', 'deployment': 'cloud', 'headers': {'server': 'keycdn'}}

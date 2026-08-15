@@ -7,5 +7,5 @@ signal.
 Observed on Chinese government hosts.
 """
 
-VENDOR = {'name': 'knownsec',
+VENDOR = {'name': 'knownsec', 'deployment': 'cloud',
  'cname': r'365cyd\.cn'}

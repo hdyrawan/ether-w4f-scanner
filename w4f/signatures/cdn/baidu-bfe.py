@@ -7,6 +7,6 @@ Baidu's CDN DNS is `*.shifen.com`.
 Observed on Baidu's own properties.
 """
 
-VENDOR = {'name': 'baidu-bfe',
+VENDOR = {'name': 'baidu-bfe', 'deployment': 'cloud',
  'headers': {'server': r'bfe(?:/|$)'},
  'cname': r'shifen\.com$'}

@@ -293,12 +293,18 @@ def fmt_block(r: dict) -> str:
 
     blk = r.get("block")
     if blk:
+        how = ("block page returned to the NORMAL request"
+               if blk.get("source") == "passive" else "provoked by --verify")
+        # the page can name the product variant even when the vendor's own
+        # signature cannot (Imperva cloud vs on-prem)
+        dep = f" ({blk['deployment']})" if blk.get("deployment") else ""
         lines.append(
             _row("block", _wrap(
-                f"{blk['vendor']} — {blk['title']} ({blk.get('status','')})"
+                f"{blk['vendor']}{dep} — {blk['title']} ({blk.get('status','')})"
                 f" [{blk.get('confidence', 95)}% conf]",
                 _YELLOW))
         )
+        lines.append(_row("     ", _wrap(how, _DIM)))
     return "\n".join(lines)
 
 
@@ -342,9 +348,17 @@ def _flag_tokens(r: dict) -> list[tuple[str, str]]:
     if tls.get("mtls"):
         out.append(("mTLS", _CRIT))
     if r.get("block"):
-        out.append((f"BLOCK {r['block'].get('vendor', '')}".rstrip(), _CRIT))
+        blk = r["block"]
+        tag = f"BLOCK {blk.get('vendor', '')}".rstrip()
+        # a page handed to a NORMAL request is a different fact from one an
+        # active probe provoked — never let the two blur
+        if blk.get("source") == "passive":
+            tag += "!"
+        out.append((tag, _CRIT))
     if r.get("error"):
         out.append((f"ERR {r['error']}".rstrip(), _CRIT))
+    if r.get("interception"):
+        out.append(("INTERCEPTED", _CRIT))
     if http.get("redirects"):
         final = (http.get("final_host") or "").strip()
         out.append((f"->{final}" if final else "->redirect", _YELLOW))
@@ -434,10 +448,14 @@ def fmt_summary_table(results: list[dict]) -> str:
     for r in results:
         ver = r.get("verdict") or []
         top = ver[0] if ver else {}
-        # a host that failed to probe has no edge to report — "unknown" would
-        # claim we looked and found nothing
-        edge = "-" if r.get("error") else (top.get("vendor", "unknown") if ver
-                                           else "unknown")
+        # A host that failed to probe has no edge to report — "unknown" would
+        # claim we looked and found nothing. It can still carry a DNS-level
+        # verdict though (CNAME/PTR/netblock resolve before the handshake),
+        # and that verdict is worth showing even when the connect failed.
+        if ver:
+            edge = top.get("vendor", "unknown")
+        else:
+            edge = "-" if r.get("error") else "unknown"
         if ver and len(ver) > 1:
             edge += f" +{len(ver) - 1}"
         notes = " ".join(t for t, _ in _flag_tokens(r))
@@ -560,11 +578,15 @@ def fmt_compact_block(r: dict) -> str:
         head += "  " + "  ".join(flags)
     lines = [head]
 
+    ver = r.get("verdict") or []
     if r.get("error"):
         lines.append(_row2("error", _wrap(r["error"][:100], _CRIT)))
-        return "\n".join(lines)
+        # A connect failure still leaves DNS-level evidence on the table, so
+        # fall through and render whatever WAS collected instead of stopping
+        # here; only a host with nothing at all ends after the error line.
+        if not ver and not ((r.get("tls") or {}).get("cert")):
+            return "\n".join(lines)
 
-    ver = r.get("verdict") or []
     tls = r.get("tls") or {}
     http = tls.get("http") or {}
     cert = tls.get("cert") or {}
@@ -574,6 +596,11 @@ def fmt_compact_block(r: dict) -> str:
         color = _vendor_color(top["vendor"])
         name = _wrap(top["vendor"], _BOLD + color) if color else _wrap(top["vendor"], _BOLD)
         detail = f"{top.get('confidence', 0)}%  {_basis(top)}"
+        # cloud vs on-prem decides which interception route is even possible:
+        # a cloud edge is anycast/SNI-routed with the origin elsewhere, an
+        # appliance sits on the origin's own address
+        if top.get("deployment"):
+            detail += _wrap(f"  ({top['deployment']})", _DIM)
         if _is_weak(top):
             detail += _wrap("  (headers only — spoofable)", _YELLOW)
         lines.append(_row2("edge", f"{name}  {detail}"))
@@ -623,6 +650,14 @@ def fmt_compact_block(r: dict) -> str:
     san_line = _san_summary(cert, limit=3)
     if san_line:
         lines.append(_row2("san", san_line))
+    # Loud on purpose: when the chain was re-signed on the way out, the cert
+    # and the pin below describe the middlebox, not the target.
+    icept = r.get("interception")
+    if icept:
+        lines.append(_row2("!", _wrap(
+            f"TLS intercepted by {icept.get('by', '?')} between w4f and the "
+            f"target ({icept.get('evidence', '')}) — cert and pin are the "
+            f"middlebox's, NOT this host's", _CRIT)))
     if cert.get("spki_sha256"):
         lines.append(_row2("pin", _wrap(f"spki {cert['spki_sha256'][:16]}…", _DIM)))
     return "\n".join(lines)

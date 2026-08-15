@@ -1,6 +1,7 @@
 """cloudflare — cdn vendor signature. See _template.py for the schema."""
 
 VENDOR = {'name': 'cloudflare',
+ 'block': {'title': r'attention required', 'body': ['cloudflare'], 'priority': 40}, 'deployment': 'cloud',
  'headers': {'server': 'cloudflare',
              'cf-ray': None,
              'cf-cache-status': None,

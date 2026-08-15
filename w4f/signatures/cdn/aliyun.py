@@ -10,7 +10,7 @@ NOTE: the `ens-cache` via marker is shared with NetEase's CDN and is NOT
 used as a signal.
 """
 
-VENDOR = {'name': 'aliyun',
+VENDOR = {'name': 'aliyun', 'deployment': 'cloud',
  'headers': {'eagleeye-traceid': None},
  'cookies': [r'^acw_tc=', r'^cdn_sec_tc=', r'^aliyungf_tc='],
  'cname': r'tbcache\.com|alicdn\.com|kunlun\w*\.com'}

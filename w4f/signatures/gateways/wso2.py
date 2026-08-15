@@ -24,7 +24,7 @@ fires when such a header actually exists.
 """
 
 VENDOR = {
-    "name": "wso2",
+    "name": "wso2", "deployment": "on-prem",
     "headers": {
         "server": r"wso2 carbon server|^wso2(?:/|$)",
         "x-wso2-*": None,

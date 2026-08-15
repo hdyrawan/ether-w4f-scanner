@@ -5,6 +5,6 @@ and customers CNAME to `*.360panyun.com`.
 Observed on a Chinese provincial government host.
 """
 
-VENDOR = {'name': '360panyun',
+VENDOR = {'name': '360panyun', 'deployment': 'cloud',
  'headers': {'server': 'panyun'},
  'cname': r'360panyun\.com'}

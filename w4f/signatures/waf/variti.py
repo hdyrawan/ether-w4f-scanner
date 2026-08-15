@@ -4,5 +4,5 @@ Variti (Russian WAF/CDN) marks its edge with `Server: Variti/<ver>`.
 Observed on a Russian CDN/video host.
 """
 
-VENDOR = {'name': 'variti',
+VENDOR = {'name': 'variti', 'deployment': 'cloud',
  'headers': {'server': r'variti(?:/|$)'}}

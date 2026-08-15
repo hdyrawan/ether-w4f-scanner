@@ -284,6 +284,23 @@ def _collect_tls(ts: ssl.SSLSocket, out: dict) -> None:
         out["cert"] = _parse_cert(der)
 
 
+# Statuses a WAF uses to refuse a request. Seeing one on a NORMAL GET means
+# the block page is already in front of us — no active probe needed.
+_BLOCKING_STATUS = ("403", "406", "418", "419", "429", "494", "501", "503")
+_BLOCK_BODY_MAX = 65536
+
+
+def status_is_blocking(status_line: str) -> bool:
+    """True when an HTTP status line carries a refusal code."""
+    parts = (status_line or "").split()
+    return len(parts) > 1 and parts[1] in _BLOCKING_STATUS
+
+
+def _is_blocking_status(data: bytes) -> bool:
+    """True when the status line of a raw response carries a blocking code."""
+    return status_is_blocking(data.split(b"\r\n", 1)[0].decode("latin-1", "replace"))
+
+
 def http_get(host: str, port: int, path: str, timeout: float,
              max_redirects: int = 5) -> dict:
     """One HTTP/1.1 GET, following redirects (apex -> www -> ...).
@@ -318,9 +335,26 @@ def http_get(host: str, port: int, path: str, timeout: float,
                     if not chunk:
                         break
                     data += chunk
+                # A blocking-shaped status means the WAF answered the NORMAL
+                # request with its own page — the vendor is named in a body
+                # we would otherwise throw away (the loop above stops at the
+                # header terminator). Keep reading only in that case: no
+                # extra request, and an ordinary 200 costs nothing. FortiWeb
+                # puts its <title> at the end of a ~39KB page, hence 64KB.
+                if _is_blocking_status(data) and len(data) < _BLOCK_BODY_MAX:
+                    while len(data) < _BLOCK_BODY_MAX:
+                        try:
+                            chunk = ts.recv(8192)
+                        except socket.timeout:
+                            break
+                        if not chunk:
+                            break
+                        data += chunk
             parsed = parse_http_response(data)
             return {"status": parsed["status"], "headers": parsed["headers"],
-                    "set-cookie-list": parsed["set-cookie-list"]}
+                    "set-cookie-list": parsed["set-cookie-list"],
+                    "title": parsed["title"], "head_text": parsed["head_text"],
+                    "body_text": parsed["body_text"]}
         except Exception as e:
             if sock is not None:
                 try:
@@ -468,11 +502,17 @@ def fingerprint(result: dict) -> list[dict]:
                                              cert_text, cnames, ptrs, ips):
             weights = {**CONF_WEIGHTS, **(rules.get("weights") or {})}
             conf = sum(weights.get(c, 0) for c in cats)
-            matches.append({"vendor": name, "signals": len(evidence),
-                            "confidence": min(conf, 100),
-                            "categories": [c for c in CONF_CATEGORY_ORDER
-                                           if c in cats],
-                            "evidence": evidence})
+            match = {"vendor": name, "signals": len(evidence),
+                     "confidence": min(conf, 100),
+                     "categories": [c for c in CONF_CATEGORY_ORDER if c in cats],
+                     "evidence": evidence}
+            # How the vendor sits in front of the origin — this is what
+            # decides whether an interception route can target one IP at all.
+            # Absent for vendors sold BOTH ways (Imperva Incapsula vs
+            # SecureSphere); there only an observed block page can say which.
+            if rules.get("deployment"):
+                match["deployment"] = rules["deployment"]
+            matches.append(match)
 
     # Rank by CONFIDENCE, not evidence count. Ranking by len(evidence) let a
     # vendor matched only by several headers (all one category, 7% total)
@@ -579,6 +619,37 @@ def parse_http_response(data: bytes) -> dict:
     }
 
 
+# CAs that belong to a TLS-INSPECTION middlebox rather than to a public trust
+# program. Seeing one means something BETWEEN w4f and the target re-signed the
+# connection, so the certificate, the SPKI pin and any block page describe that
+# box — not the target's edge. This matters most for the pin: w4f's headline
+# output is "the value an app's custom pinner compares against", and a re-signed
+# chain silently yields the middlebox's pin instead.
+_INSPECTION_CA_ISSUERS = (
+    "fortinet", "zscaler", "blue coat", "bluecoat", "proxysg", "palo alto",
+    "netskope", "forcepoint", "sophos", "mcafee web gateway", "skyhigh",
+    "cisco umbrella", "opendns", "kaspersky", "bitdefender", "mitmproxy",
+)
+
+
+def detect_interception(cert: dict, block: dict | None = None) -> dict | None:
+    """Flag a connection re-signed by a TLS-inspection middlebox.
+
+    Returns {by, evidence} or None. This never changes the vendor verdict —
+    attributing the middlebox to the target would fingerprint the scanner's
+    own network on every host it scans, which is the opposite of useful.
+    """
+    issuer = f"{cert.get('issuer_org') or ''} {cert.get('issuer') or ''}".lower()
+    for ca in _INSPECTION_CA_ISSUERS:
+        if ca in issuer:
+            return {"by": ca,
+                    "evidence": f"cert issuer: {cert.get('issuer_org') or cert.get('issuer')}"}
+    if block and block.get("interception"):
+        return {"by": block.get("vendor", ""),
+                "evidence": f"block page: {block.get('title', '')}"}
+    return None
+
+
 def match_block_page(title: str, head_text: str, body_text: str, status: str) -> dict | None:
     """Match a WAF block page by its <title> / body markers.
 
@@ -586,39 +657,48 @@ def match_block_page(title: str, head_text: str, body_text: str, status: str) ->
     Returns {vendor, title, status} or None when nothing matches.
     """
     t = title.lower()
-    # FortiWeb localizes its title ("The URL Request Tidak Tersedia" on the
-    # Indonesian fleet), so match both the English and ID fragments.
-    if "the url you requested has been blocked" in t \
-            or ("tidak tersedia" in t and "url" in t):
-        return {"vendor": "fortiweb", "title": title, "status": status}
-    if t.startswith("request rejected") and "f5" in head_text:
-        return {"vendor": "f5-asm", "title": title, "status": status}
-    if t.startswith("request rejected"):
-        return {"vendor": "f5-asm", "title": title, "status": status}
-    if "attention required" in t and "cloudflare" in body_text:
-        return {"vendor": "cloudflare", "title": title, "status": status}
-    # Akamai Kona WAF / Bot Manager block page.
-    if "access denied" in t and "akamai" in body_text:
-        return {"vendor": "akamai", "title": title, "status": status}
-    # Sucuri firewall block page.
-    if "sucuri firewall" in body_text:
-        return {"vendor": "sucuri", "title": title, "status": status}
-    # Wordfence WAF block page.
-    if "wordfence" in body_text:
-        return {"vendor": "wordfence", "title": title, "status": status}
-    # Wallarm block page (nginx + Wallarm WAF).
-    if "wallarm" in body_text and "blocked" in body_text:
-        return {"vendor": "wallarm", "title": title, "status": status}
-    if "incapsula" in body_text or "incap_ses" in head_text:
-        return {"vendor": "imperva", "title": title, "status": status}
-    # AWS WAF fronted by CloudFront: a 403 with CloudFront's generic error
-    # title. Distinguish a WAF BLOCK from an ordinary CloudFront 4xx by the
-    # "Request blocked." reason line (other CloudFront errors say
-    # "Bad request.", "The distribution ...", etc.) — the title alone would
-    # mislabel every CloudFront error as a WAF.
-    if "the request could not be satisfied" in t and "request blocked" in body_text:
-        return {"vendor": "aws-waf", "title": title, "status": status}
+    for name, rule in _block_rules():
+        if "title" in rule and not re.search(rule["title"], t):
+            continue
+        if any(m not in body_text for m in rule.get("body", ())):
+            continue
+        if "body_any" in rule and not any(m in body_text for m in rule["body_any"]):
+            continue
+        if any(m not in head_text for m in rule.get("head", ())):
+            continue
+        out = {"vendor": rule.get("vendor", name), "title": title, "status": status}
+        if rule.get("interception"):
+            out["interception"] = True
+        if rule.get("deployment"):
+            out["deployment"] = rule["deployment"]
+        return out
     return None
+
+
+def _block_rules() -> list[tuple[str, dict]]:
+    """(vendor, rule) pairs ordered by priority, built once from the table.
+
+    Order is load-bearing: specific rules must beat generic ones (an Imperva
+    SecureSphere page also contains an incident id; a CloudFront error is
+    only an AWS WAF block when it says "Request blocked."). Vendors declare
+    `priority` explicitly rather than relying on file discovery order.
+    """
+    global _BLOCK_RULE_CACHE
+    if _BLOCK_RULE_CACHE is None:
+        from w4f.vendors import VENDORS
+        pairs: list[tuple[str, dict]] = []
+        for name, rules in VENDORS.items():
+            blk = rules.get("block")
+            if not blk:
+                continue
+            for rule in (blk if isinstance(blk, list) else [blk]):
+                pairs.append((name, rule))
+        pairs.sort(key=lambda nr: (nr[1].get("priority", 100), nr[0]))
+        _BLOCK_RULE_CACHE = pairs
+    return _BLOCK_RULE_CACHE
+
+
+_BLOCK_RULE_CACHE: list[tuple[str, dict]] | None = None
 
 
 def verify_block(host: str, port: int, timeout: float) -> dict | None:
@@ -826,6 +906,20 @@ def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
             return result
         tls = tls_probe(host, port, path, timeout, do_http)
         result["tls"] = tls
+        # A handshake that never ESTABLISHED (no tls_version) means the host
+        # was never actually probed — connect refused, timed out, network
+        # unreachable. Without this the host came back error=None with an
+        # empty verdict, i.e. indistinguishable from a scanned host whose
+        # edge matched no signature: a sweep read 13 unreachable hosts as
+        # "unknown edge" (signature gaps) and still exited 0, contradicting
+        # the documented exit-code contract ("connect refused" = exit 1).
+        # Deliberately NOT an early return: DNS-level signals (CNAME, PTR,
+        # netblock) were already collected and still fingerprint fine, so a
+        # host can legitimately report BOTH an error and a DNS-based verdict.
+        # mTLS is unaffected — there the handshake completes (tls_version is
+        # set) and the certificate-required alert lands on the GET instead.
+        if tls.get("tls_error") and not tls.get("tls_version"):
+            result["error"] = tls["tls_error"]
         # ALPN observation: the TLS handshake advertises h2+http/1.1 but the
         # GET is sent over a separate http/1.1-only connection (h2 frames
         # would read as garbage). Report the negotiated ALPN distinctly and
@@ -848,6 +942,41 @@ def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
             result["chain_verified"] = tls.get("chain_verified")
         result["mtls"] = tls.get("mtls", False)
         result["verdict"] = fingerprint(result)
+        # The edge may have answered the NORMAL request with its own block
+        # page (403 + a WAF page, e.g. reputation/geo blocking of the client
+        # rather than of the request shape). That page names the vendor, so
+        # match it here instead of requiring --verify. The passive/active
+        # split is preserved via `source` — a consumer must still be able to
+        # tell a page we were handed from one an active probe provoked.
+        http_layer = tls.get("http") or {}
+        # transient: matching material must not reach --json (a 64KB body per
+        # host would bloat the tree and put page content in the output)
+        title = http_layer.pop("title", "")
+        head_text = http_layer.pop("head_text", "")
+        body_text = http_layer.pop("body_text", "")
+        # ONLY on a refusal status. match_block_page() was written for the
+        # --verify response, where a block is already presumed, so several of
+        # its rules are not status-safe on their own: the Imperva rule keys on
+        # the `incap_ses` cookie, which Imperva sets on EVERY response, so
+        # calling it on a 200 reported healthy Imperva-fronted hosts as
+        # serving a block page. The gate matches the body-read gate above, so
+        # the matcher only ever sees a response that actually refused us.
+        if status_is_blocking(http_layer.get("status", "")):
+            passive_blk = match_block_page(title, head_text, body_text,
+                                           http_layer.get("status", ""))
+            if passive_blk:
+                passive_blk["confidence"] = 95
+                passive_blk["source"] = "passive"
+                # An interception page is NOT the target's WAF — keep it out
+                # of `block` so --csv/--sarif never report it as a finding
+                # about the host.
+                if not passive_blk.get("interception"):
+                    result["block"] = passive_blk
+                else:
+                    result["_intercept_page"] = passive_blk
+        intercept = detect_interception(cert or {}, result.pop("_intercept_page", None))
+        if intercept:
+            result["interception"] = intercept
         if verify:
             blk = verify_block(host, port, timeout)
             if blk:
@@ -855,7 +984,15 @@ def probe_one(hostport: str, path: str, timeout: float, do_http: bool,
                 # possible signal, so it carries high confidence (it comes
                 # from verify_block/match_block_page, not fingerprint()).
                 blk["confidence"] = 95
-                result["block"] = blk
+                blk["source"] = "verify"   # provoked, not handed to us
+                # Same rule as the passive path: a page from a box on OUR
+                # path is not a finding about the host. Provoking it with
+                # --verify does not make it the target's WAF — an egress
+                # filter answers the attack-shaped query too.
+                if blk.get("interception"):
+                    result["interception"] = detect_interception(cert or {}, blk)
+                else:
+                    result["block"] = blk
         if ws_path:
             result["ws"] = ws_probe(host, port, ws_path, timeout)
         if grpc:

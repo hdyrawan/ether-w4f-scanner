@@ -5,5 +5,5 @@ with `Server: QRATOR`.
 Observed on a Russian hosting provider's site.
 """
 
-VENDOR = {'name': 'qrator',
+VENDOR = {'name': 'qrator', 'deployment': 'cloud',
  'headers': {'server': 'qrator'}}

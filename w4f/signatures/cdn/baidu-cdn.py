@@ -6,5 +6,5 @@ Distinct from baidu-bfe (Baidu's own front end for baidu.com properties).
 Observed on Chinese e-commerce, logistics, and portal hosts.
 """
 
-VENDOR = {'name': 'baidu-cdn',
+VENDOR = {'name': 'baidu-cdn', 'deployment': 'cloud',
  'headers': {'x-bdcdn-cache-status': None, 'via': r'bdcdn'}}

@@ -64,13 +64,54 @@ VENDOR = {
     "nets": ["203.0.113.0/24"],     # IP networks the host must resolve inside
     "requires": [...],              # optional AND/OR gate (see below)
     "weights": {"cname": 25},       # optional confidence override
+    "deployment": "cloud",          # cloud | on-prem | origin (optional)
+    "block": {...},                 # block page(s), see below (optional)
 }
 ```
 
 Allowed keys: `name`, `headers`, `cookies`, `cert`, `cname`, `ptr`, `nets`,
-`requires`, `weights`. Anything else is a hard loader error. A header key
-ending in `*` is a prefix match (exact keys stay exact — the arvancloud
-lesson: a glob that never fires is a dead rule).
+`requires`, `weights`, `deployment`, `block`. Anything else is a hard loader
+error. A header key ending in `*` is a prefix match (exact keys stay exact —
+the arvancloud lesson: a glob that never fires is a dead rule).
+
+### `deployment` — how the vendor sits in front of the origin
+
+`cloud` (anycast/SNI-routed, origin lives elsewhere), `on-prem` (an
+appliance on the origin's own address), or `origin` (the origin stack
+itself). This is the field that decides whether an interception route can
+target a single IP at all, so it is worth setting.
+
+**Leave it unset for a vendor sold both ways.** Imperva ships Incapsula
+(cloud) and SecureSphere (on-prem) under one name; a static tag would be
+wrong half the time, so the observed block page carries the variant instead.
+
+### `block` — the WAF's own block page
+
+One rule or a list of them. Block pages used to live in a hardcoded
+if-chain inside `scanner.py`, which meant adding one edited the matcher and
+broke this package's promise that a vendor is ONE file.
+
+```python
+"block": [
+    {"title": r"the url you requested has been blocked",  # regex vs <title>
+     "body": ["marker", "both must appear"],   # ALL present in the body
+     "body_any": ["either", "or"],             # ANY present in the body
+     "head": ["incap_ses"],                    # ALL present in the headers
+     "priority": 20,          # lower runs first; specific beats generic
+     "vendor": "f5-asm",      # reported name when it differs from `name`
+     "deployment": "on-prem", # variant this PAGE identifies
+     "interception": True},   # a box on the SCANNER's path, not the target's
+]
+```
+
+`priority` is load-bearing: a SecureSphere page also contains an incident
+id, and a CloudFront error is only an AWS WAF block when it also says
+"Request blocked.", so specific rules must be ordered ahead of generic ones.
+
+A file may carry a `block` rule and **no** passive signals — that is how a
+middlebox on the scanner's own path is declared (`middlebox/`), and the
+loader keeps it unreachable from the passive fingerprint loop so it can
+never be reported as the target's edge.
 
 ## How signals are weighted
 
@@ -284,6 +325,32 @@ Verdicts are ranked by confidence, so `verdict[0]` is the best-evidenced
 vendor and the one the summary table, `--csv` and SARIF call the edge. A
 second entry is usually the origin behind that edge (`imperva` in front of
 `nginx`), shown as `+1` in the table and on a `stack` line in the block.
+
+## Attribution notes from sweep work
+
+- **FortiWeb is detectable passively via `cookiesession1`.** FortiWeb sets
+  this cookie on the FIRST response to every client, before any attack shape
+  is sent — Fortinet's own docs describe it (`waf cookie-security`, "HTTP
+  sessions & security") and their community thread on renaming it for
+  information-disclosure reasons confirms the name is fixed. That turns the
+  reference "silent WAF" — the one that serves plain nginx to passive
+  requests — into a passive detection, no `--verify` needed.
+- **Header cloaking is NOT attributable.** Some deployments replace upstream
+  header values with X's (`server: XXXXXXX`). Several WAF vendors offer this,
+  so attributing it to one would trade a false negative for a false positive;
+  it surfaces on the console `leads` line instead.
+- **Akamai's two most common delivery CNAMEs are `edgekey.net` (Enhanced
+  TLS) and `akamaiedge.net` (Standard TLS).** Both were missing until
+  0.1.34 — note `akamai\.net` cannot match `akamaiedge.net`, the literal dot
+  blocks it — so Akamai-fronted hosts scored headers-only, or unknown when
+  the edge sent no `akamai-*` header.
+- **Imperva ships two different block pages.** Incapsula/cloud is matched by
+  `incapsula`/`incap_ses`; SecureSphere (on-prem) serves `<title>Error</title>`
+  plus "The incident ID is" and answers **200 OK**, so only `--verify`
+  reaches it and a status-based heuristic never will.
+- **An inspection middlebox is not a vendor.** See AGENTS.md trap #7 — a
+  cert issued by an inspection CA describes the scanner's own path, and the
+  SPKI pin reported for such a host is the middlebox's.
 
 ## Console colors per vendor
 

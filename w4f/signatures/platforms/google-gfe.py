@@ -1,6 +1,6 @@
 """google-gfe — platforms vendor signature. See _template.py for the schema."""
 
-VENDOR = {'name': 'google-gfe',
+VENDOR = {'name': 'google-gfe', 'deployment': 'cloud',
  'headers': {'server': 'gws|gfe|esf'},
  'cert': 'google trust services',
  'ptr': '1e100\\.net|googleusercontent\\.com',

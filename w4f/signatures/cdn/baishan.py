@@ -5,5 +5,5 @@ routing domains are bsgslb.cn and bsclink.cn.
 Observed on Chinese government and news hosts.
 """
 
-VENDOR = {'name': 'baishan',
+VENDOR = {'name': 'baishan', 'deployment': 'cloud',
  'cname': r'bsgslb\.cn|bsclink\.cn'}

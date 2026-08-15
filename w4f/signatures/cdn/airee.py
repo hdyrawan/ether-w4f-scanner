@@ -5,6 +5,6 @@ Airee (Russian CDN/WAF) marks its edge with `Server: Airee/Cloud` and sets
 Observed on Airee's own site.
 """
 
-VENDOR = {'name': 'airee',
+VENDOR = {'name': 'airee', 'deployment': 'cloud',
  'headers': {'server': r'airee(?:/|$)'},
  'cookies': [r'^airee_']}

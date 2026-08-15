@@ -16,9 +16,30 @@ def test_every_vendor_has_rules():
     for name, rules in VENDORS.items():
         assert rules, f"vendor {name} has no rules"
         has_signal = any(
-            rules.get(k) for k in ("headers", "cookies", "cert", "cname", "ptr", "nets")
+            rules.get(k) for k in ("headers", "cookies", "cert", "cname", "ptr",
+                                   "nets", "block")
         )
         assert has_signal, f"vendor {name} has no usable signal kind"
+
+
+def test_block_only_vendors_never_match_passively():
+    """A vendor carrying ONLY a block rule (a middlebox on the scanner's own
+    path) must be unreachable from the passive fingerprint loop — otherwise
+    it would be reported as the target's edge."""
+    from w4f.scanner import fingerprint
+    passive_kinds = ("headers", "cookies", "cert", "cname", "ptr", "nets")
+    block_only = [n for n, r in VENDORS.items()
+                  if r.get("block") and not any(r.get(k) for k in passive_kinds)]
+    assert block_only, "expected at least one block-only vendor"
+    rich = {
+        "ips": ["104.18.1.79"], "cname": ["x.edgekey.net"], "ptr": ["x.akamai.com"],
+        "cert": {"issuer_org": "Fortinet", "issuer": "O=Fortinet"},
+        "tls": {"http": {"headers": {"server": "nginx", "x-powered-by": "php"},
+                         "set-cookie-list": ["cookiesession1=abc"]}},
+    }
+    matched = {m["vendor"] for m in fingerprint(rich)}
+    for name in block_only:
+        assert name not in matched, f"{name} must not match passively"
 
 
 def test_all_regexes_compile():
@@ -253,6 +274,31 @@ class TestNewSignatures:
             cookies=["__SignalShield_session=abc"])
         assert "fastly-waf" not in self._names(headers={"server": "fastly"})
 
+    def test_akamai_delivery_cnames(self):
+        # edgekey.net (Enhanced TLS) and akamaiedge.net (Standard TLS) are the
+        # two most common Akamai delivery CNAMEs. Both were missed until
+        # 0.1.34 — "akamai\.net" cannot match "akamaiedge.net" — which scored
+        # an Akamai-fronted host headers-only, or unknown when the edge sent
+        # no akamai-* header at all.
+        assert "akamai" in self._names(cname=["www.example.com.edgekey.net"])
+        assert "akamai" in self._names(cname=["example.com.akamaiedge.net"])
+        assert "akamai" in self._names(cname=["a.example.com.edgekey-staging.net"])
+        assert "akamai" in self._names(cname=["e1234.dscx.akamaiedge.net"])
+        assert "akamai" in self._names(cname=["x.deploy.akamaitechnologies.com"])
+
+    def test_akamai_cname_no_substring_false_positive(self):
+        # a hostname that merely starts with "edgekey" is not Akamai
+        assert "akamai" not in self._names(cname=["edgekeyless.example.com"])
+        assert "akamai" not in self._names(cname=["cdn.example.net"])
+
+    def test_akamai_cname_gives_real_confidence(self):
+        # the point of the fix: cname(20) + headers(7) instead of headers(7)
+        ver = _fingerprint_result(cname=["www.example.com.edgekey.net"],
+                                  headers={"akamai-grn": "0.7ce0d58c.1786765563.216"})
+        ak = next(m for m in ver if m["vendor"] == "akamai")
+        assert ak["confidence"] == 27
+        assert set(ak["categories"]) == {"cname", "headers"}
+
     def test_bytedance_no_akamaized_false_positive(self):
         # an Akamai customer CNAME must NOT claim bytedance
         assert "bytedance" not in self._names(cname=["cdn.example.akamaized.net"])
@@ -273,3 +319,63 @@ def _fingerprint_result(headers=None, cookies=None, cname=None, ptr=None, ips=No
         "cert": cert or {},
         "tls": {"http": {"headers": headers or {}, "set-cookie-list": cookies or []}},
     })
+
+
+class TestDeployment:
+    """cloud vs on-prem decides which interception route is possible at all:
+    a cloud edge is anycast/SNI-routed with the origin elsewhere, an
+    appliance sits on the origin's own address."""
+
+    def test_values_are_valid(self):
+        for name, rules in VENDORS.items():
+            dep = rules.get("deployment")
+            assert dep in (None, "cloud", "on-prem", "origin"), f"{name}: {dep}"
+
+    def test_known_vendors_tagged(self):
+        assert VENDORS["cloudflare"]["deployment"] == "cloud"
+        assert VENDORS["akamai"]["deployment"] == "cloud"
+        assert VENDORS["f5"]["deployment"] == "on-prem"
+        assert VENDORS["netscaler"]["deployment"] == "on-prem"
+        assert VENDORS["nginx"]["deployment"] == "origin"
+
+    def test_dual_model_vendors_left_unset(self):
+        # Imperva sells Incapsula (cloud) AND SecureSphere (on-prem); a
+        # static tag would be wrong half the time, so the observed block
+        # page carries it instead
+        assert "deployment" not in VENDORS["imperva"]
+
+    def test_verdict_carries_deployment(self):
+        ver = _fingerprint_result(headers={"server": "cloudflare"},
+                                  ips=["104.18.1.79"])
+        cf = next(m for m in ver if m["vendor"] == "cloudflare")
+        assert cf["deployment"] == "cloud"
+
+    def test_block_page_reports_the_variant(self):
+        from w4f.scanner import match_block_page
+        on_prem = match_block_page(
+            "Error", "", "the incident id is: 5. contact support for "
+            "additional information.", "HTTP/1.1 200 OK")
+        assert on_prem["vendor"] == "imperva" and on_prem["deployment"] == "on-prem"
+        cloud = match_block_page("Access Denied", "",
+                                 "incapsula incident id", "HTTP/1.1 403 Forbidden")
+        assert cloud["vendor"] == "imperva" and cloud["deployment"] == "cloud"
+
+
+class TestBlockRulesAreModular:
+    def test_block_rules_live_in_vendor_files(self):
+        # adding a block page must not require editing the matcher
+        names = {n for n, r in VENDORS.items() if r.get("block")}
+        assert {"fortiweb", "f5", "imperva", "cloudflare", "akamai"} <= names
+
+    def test_priority_orders_specific_before_generic(self):
+        from w4f.scanner import _block_rules
+        order = [n for n, _ in _block_rules()]
+        # the interception page must be evaluated before any vendor page
+        assert order[0] == "fortinet-webfilter"
+        # aws-waf's CloudFront-error rule is the most generic — evaluated last
+        assert order[-1] == "aws-waf"
+
+    def test_reported_vendor_name_can_be_overridden(self):
+        from w4f.scanner import match_block_page
+        out = match_block_page("Request Rejected", "", "support id", "HTTP/1.1 200 OK")
+        assert out["vendor"] == "f5-asm"   # not the signature name "f5"

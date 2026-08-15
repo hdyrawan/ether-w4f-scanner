@@ -5,5 +5,5 @@ Customers CNAME to `*.qiniudns.com` (Qiniu's DNS platform).
 Observed on Chinese portal and e-commerce hosts.
 """
 
-VENDOR = {'name': 'qiniu',
+VENDOR = {'name': 'qiniu', 'deployment': 'cloud',
  'cname': r'qiniudns\.com|qiniucdn\.com'}

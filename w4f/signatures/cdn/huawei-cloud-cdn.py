@@ -8,6 +8,6 @@ Distinct from the huawei-cloud-waf rule (HWWAFSESID cookie / huaweicloudwaf
 server token).
 """
 
-VENDOR = {'name': 'huawei-cloud-cdn',
+VENDOR = {'name': 'huawei-cloud-cdn', 'deployment': 'cloud',
  'headers': {'x-ccdn-*': None, 'x-hcs-proxy-type': '1'},
  'cname': r'cdnhwc\d*\.com'}

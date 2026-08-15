@@ -5,5 +5,5 @@ Cloud's CDN product) or `*.gslb.qianxun.com` (JD's GSLB).
 Observed on JD's own site and a Chinese business-news host.
 """
 
-VENDOR = {'name': 'jd-cloud',
+VENDOR = {'name': 'jd-cloud', 'deployment': 'cloud',
  'cname': r'jcloud-cdn\.com|qianxun\.com'}

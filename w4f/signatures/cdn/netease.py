@@ -6,5 +6,5 @@ distinguishing signal.
 Observed on NetEase's own properties.
 """
 
-VENDOR = {'name': 'netease',
+VENDOR = {'name': 'netease', 'deployment': 'cloud',
  'cname': r'163jiasu\.com'}

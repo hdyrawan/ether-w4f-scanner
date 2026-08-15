@@ -6,5 +6,5 @@ uproxy via nodes) on protected hosts.
 Observed on Chinese banking and media hosts.
 """
 
-VENDOR = {'name': 'wswaf',
+VENDOR = {'name': 'wswaf', 'deployment': 'cloud',
  'headers': {'server': r'wswaf(?:/|$)'}}

@@ -5,6 +5,73 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.34] — 2026-08-15
+
+Findings from a 139-host production sweep across three regional markets.
+Every rule here was verified independently (own probe + vendor documentation)
+before being written; sweep output stays out of this repo.
+
+**Two scanner bugs the sweep exposed:**
+
+- **A failed handshake was reported as "unknown edge".** `tls_probe` recorded
+  `tls_error` but `probe_one` never promoted it, so a host that refused the
+  connection came back `error=None` with an empty verdict — indistinguishable
+  from a scanned host whose edge matched no signature. 13 of 139 hosts read as
+  signature gaps when they were simply unreachable, and the run still exited 0
+  against a documented contract that makes "connect refused" exit 1. Now
+  surfaced as a host error, WITHOUT an early return: DNS-level signals resolve
+  before the handshake, so a host can legitimately report both an error and a
+  CNAME-based verdict, and the report shows both.
+- **A block page on the NORMAL request was discarded.** `http_get` stops at the
+  header terminator and dropped the parsed title/body, while `match_block_page`
+  was wired only to `--verify`. A WAF that refuses the plain GET already handed
+  us its page. The body is now read only on a refusal status (no extra request;
+  an ordinary 200 costs nothing) and matched, tagged `source: "passive"` so the
+  passive and active layers never blur.
+
+**New/fixed signatures:**
+
+- **FortiWeb, passively.** `cookiesession1` — FortiWeb sets it on the first
+  response to every client, per Fortinet's own docs, and the name cannot be
+  changed. The reference "silent WAF" no longer needs `--verify`.
+- **Akamai `edgekey.net` + `akamaiedge.net`** — its two most common delivery
+  CNAMEs, both missing (`akamai\.net` cannot match `akamaiedge.net`). An
+  Akamai-fronted host scored headers-only, or unknown when the edge sent no
+  `akamai-*` header.
+- **Imperva SecureSphere** block page (on-prem: `<title>Error</title>` + "the
+  incident ID is"), which answers 200 OK — only `--verify` can reach it.
+- **Fortinet WebFilter** as a `middlebox/` vendor (new seventh family).
+
+**`deployment`: cloud | on-prem | origin.** New per-vendor field carried into
+the verdict — the field that decides whether an interception route can target
+one IP at all. 89 vendors tagged; vendors sold both ways (Imperva) are left
+unset on purpose, with the observed block page reporting the variant instead.
+
+**Block pages are now per-vendor.** They lived in a hardcoded if-chain in
+`scanner.py`, so adding one edited the matcher and broke the package's promise
+that a vendor is ONE file. They are declared in the vendor's own file
+(`block`, with explicit `priority` because specific rules must beat generic
+ones) and the matcher iterates the table.
+
+**TLS-interception detection.** A cert issued by an inspection CA means
+something between w4f and the target re-signed the connection — so the
+reported SPKI pin is the middlebox's, not the host's, silently breaking the
+tool's headline output. Flagged `INTERCEPTED`, never as a verdict: two
+unrelated hosts returned a byte-identical Fortinet page, and attributing it
+would have fingerprinted our own network on every host scanned.
+
+- Fixed a false positive introduced during this work: calling the block
+  matcher regardless of status reported eleven healthy Imperva-fronted hosts
+  (200/301/302) as serving a block page — its Imperva rule keys on the
+  `incap_ses` cookie, which Imperva sets on every response.
+- Fixed a second one caught on a live `--verify` run: interception pages were
+  routed away from `block` on the passive path but not the active one, so an
+  egress filter's page became a finding about the target. Provoking a box on
+  our own path does not make it the target's WAF — it answers the
+  attack-shaped query too.
+- AGENTS.md traps #7 and #8 record both lessons.
+- +27 tests (324 total).
+
 ## [0.1.33] — 2026-08-15
 
 SAN in the default triage view (user review). The certificate's SAN list is

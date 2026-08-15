@@ -7,6 +7,6 @@ London) — per WordPress VIP's own docs. Customers CNAME to `*.go-vip.net`.
 Observed on ~20 media/news hosts in the sweep corpus.
 """
 
-VENDOR = {'name': 'wordpress-vip',
+VENDOR = {'name': 'wordpress-vip', 'deployment': 'cloud',
  'headers': {'x-rq': r'^[a-z]{3}\d+ \d+ \d+ \d+$'},
  'cname': r'go-vip\.net'}

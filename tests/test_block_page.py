@@ -194,3 +194,88 @@ class TestParseHttpResponse:
         p = parse_http_response(b"")
         assert p["status"] == ""
         assert p["headers"] == {}
+
+
+class TestPathInterception:
+    """A TLS-inspection middlebox on the SCANNER's path must never be
+    reported as the target's edge — that would fingerprint our own network
+    on every host we scan."""
+
+    def test_fortinet_webfilter_page_is_flagged_as_interception(self):
+        from w4f.scanner import match_block_page
+        body = ("<h1>fortinet webfilter</h1><h3>this connection is invalid. "
+                "ssl certificate expired.</h3><p>a secure connection to "
+                "example.com cannot be established.</p>")
+        out = match_block_page("Invalid Connection", "", body, "HTTP/1.1 403 Forbidden")
+        assert out and out["interception"] is True
+        assert out["vendor"] == "fortinet-webfilter"
+
+    def test_generic_invalid_connection_is_not_matched(self):
+        # the title alone is too generic — the vendor marker must be present
+        from w4f.scanner import match_block_page
+        assert match_block_page("Invalid Connection", "", "<p>try again</p>",
+                                "HTTP/1.1 403 Forbidden") is None
+
+    def test_inspection_ca_issuer_detected(self):
+        from w4f.scanner import detect_interception
+        cert = {"issuer_org": "Fortinet",
+                "issuer": "countryName=US, organizationName=Fortinet, "
+                          "organizationalUnitName=Certificate Authority, "
+                          "commonName=FG4H0FT922903229"}
+        out = detect_interception(cert)
+        assert out and out["by"] == "fortinet"
+        assert "Fortinet" in out["evidence"]
+
+    def test_public_ca_is_not_interception(self):
+        from w4f.scanner import detect_interception
+        for org in ("DigiCert Inc", "Let's Encrypt", "GlobalSign nv-sa",
+                    "Sectigo Limited", "Google Trust Services"):
+            assert detect_interception({"issuer_org": org, "issuer": org}) is None
+
+    def test_interception_page_never_becomes_a_block_finding(self):
+        # `block` feeds --csv/--sarif as a finding ABOUT THE HOST; an
+        # interception page is a fact about our own path instead
+        from w4f.scanner import match_block_page
+        out = match_block_page("Invalid Connection", "",
+                               "<h1>fortinet webfilter</h1>", "HTTP/1.1 403 Forbidden")
+        assert out.get("interception") is True
+
+
+class TestPassiveBlockPage:
+    def test_block_page_on_a_normal_request_is_matched(self):
+        # a WAF that blocks the PLAIN GET already handed us its page; the
+        # vendor should not require --verify to be named
+        from w4f.scanner import match_block_page
+        out = match_block_page("The URL you requested has been blocked", "",
+                               "<html>blocked</html>", "HTTP/1.1 403 Forbidden")
+        assert out and out["vendor"] == "fortiweb"
+
+
+class TestImpervaSecureSphere:
+    """The on-prem appliance serves a different page from Incapsula/cloud —
+    and answers 200 OK, so only --verify reaches it."""
+
+    def test_securesphere_error_page(self):
+        from w4f.scanner import match_block_page
+        body = ("<html><head><title>error</title></head><body>"
+                "this page can't be displayed. contact your support team. "
+                "the incident id is: 1234567890.</body></html>")
+        out = match_block_page("Error", "", body, "HTTP/1.1 200 OK")
+        assert out and out["vendor"] == "imperva"
+
+    def test_securesphere_contact_support_variant(self):
+        from w4f.scanner import match_block_page
+        body = ("<title>error</title>the incident id is: 99. "
+                "contact support for additional information.")
+        assert match_block_page("Error", "", body, "HTTP/1.1 200 OK")["vendor"] == "imperva"
+
+    def test_generic_error_title_alone_is_not_a_block(self):
+        from w4f.scanner import match_block_page
+        assert match_block_page("Error", "", "<p>something went wrong</p>",
+                                "HTTP/1.1 500 Internal Server Error") is None
+
+    def test_incident_id_alone_is_not_enough(self):
+        # an application error page may print an incident id of its own
+        from w4f.scanner import match_block_page
+        assert match_block_page("Oops", "", "your incident id is 42, sorry",
+                                "HTTP/1.1 500 Internal Server Error") is None

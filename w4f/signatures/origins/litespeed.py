@@ -1,3 +1,3 @@
 """litespeed — origins vendor signature. See _template.py for the schema."""
 
-VENDOR = {'name': 'litespeed', 'headers': {'server': 'litespeed'}}
+VENDOR = {'name': 'litespeed', 'deployment': 'origin', 'headers': {'server': 'litespeed'}}

@@ -143,6 +143,32 @@ class TestProbeOne:
         out = probe_one("nonexistent.invalid", "/", 2.0, do_http=False)
         assert out["error"] in ("DNS did not resolve", None) or out["resolved"]["ips"] == []
 
+    def test_connect_failure_is_an_error_not_an_unknown_edge(self):
+        # A handshake that never established means the host was never probed.
+        # It used to come back error=None with an empty verdict — identical
+        # to a scanned host whose edge matched no signature, so a sweep read
+        # unreachable hosts as signature gaps and still exited 0 (the
+        # documented contract makes "connect refused" exit 1).
+        import socket
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        closed_port = s.getsockname()[1]
+        s.close()  # nothing is listening there now
+        out = probe_one(f"127.0.0.1:{closed_port}", "/", 3.0, do_http=True)
+        assert out["error"], "a refused connect must surface as a host error"
+        assert "connect failed" in out["error"]
+        assert out["tls"]["tls_error"]
+        assert out["tls"].get("tls_version") is None
+
+    def test_established_handshake_is_not_flagged_as_an_error(self, tls_server):
+        # the guard keys on a MISSING tls_version, so a normal scan — and the
+        # mTLS case, where the handshake completes and the alert lands on the
+        # GET — must stay error-free
+        srv = tls_server(status="HTTP/1.1 200 OK", headers=["Server: nginx"])
+        out = probe_one(f"127.0.0.1:{srv.port}", "/", 5.0, do_http=True)
+        assert out["error"] is None
+        assert out["tls"]["tls_version"]
+
 
 class TestPublicApi:
     """w4f.fingerprint_host: the --json dict shape, without the CLI."""
@@ -396,3 +422,67 @@ class TestSarifOutput:
         res = doc["runs"][0]["results"][0]
         assert res["ruleId"] == "w4f/unknown-edge"
         assert res["level"] == "note"
+
+
+class TestPassiveBlockDetection:
+    """A WAF that blocks the NORMAL request has already handed us its page —
+    naming the vendor must not require the active --verify probe."""
+
+    def test_passive_block_page_matched_without_verify(self, tls_server):
+        body = (b"<html><head><title>The URL you requested has been blocked"
+                b"</title></head><body>blocked</body></html>")
+        srv = tls_server(status="HTTP/1.1 403 Forbidden", headers=["Server: nginx"],
+                         body=body)
+        out = probe_one(f"127.0.0.1:{srv.port}", "/", 5.0, do_http=True, verify=False)
+        assert out["block"], "a block page on the plain GET must be reported"
+        assert out["block"]["vendor"] == "fortiweb"
+        assert out["block"]["source"] == "passive"
+
+    def test_ordinary_200_does_not_read_a_body(self, tls_server):
+        # the extra read is gated on a blocking status, so a normal response
+        # costs no additional bytes and yields no block finding
+        srv = tls_server(status="HTTP/1.1 200 OK", headers=["Server: nginx"],
+                         body=b"<html><title>Welcome</title></html>")
+        out = probe_one(f"127.0.0.1:{srv.port}", "/", 5.0, do_http=True)
+        assert out.get("block") is None
+
+    def test_matching_material_never_reaches_the_result_tree(self, tls_server):
+        # body_text/head_text/title are transient: a 64KB body per host would
+        # bloat --json and put page content in the output
+        body = b"<html><head><title>The URL you requested has been blocked</title></head></html>"
+        srv = tls_server(status="HTTP/1.1 403 Forbidden", body=body)
+        out = probe_one(f"127.0.0.1:{srv.port}", "/", 5.0, do_http=True)
+        http = out["tls"]["http"]
+        assert "body_text" not in http and "head_text" not in http and "title" not in http
+
+
+    def test_healthy_response_is_never_a_block_page(self, tls_server):
+        # regression: match_block_page's Imperva rule keys on the incap_ses
+        # cookie, which Imperva sets on EVERY response — calling the matcher
+        # regardless of status reported healthy Imperva-fronted hosts (200,
+        # 301, 302) as serving a block page
+        for status in ("HTTP/1.1 200 OK", "HTTP/1.1 301 Moved Permanently",
+                       "HTTP/1.1 302 Found"):
+            srv = tls_server(status=status,
+                             headers=["Set-Cookie: incap_ses_123_456=abc",
+                                      "X-Iinfo: 1-2-3"],
+                             body=b"<html><title>Document Moved</title></html>")
+            out = probe_one(f"127.0.0.1:{srv.port}", "/", 5.0, do_http=True)
+            assert out.get("block") is None, f"{status} must not be a block page"
+
+    def test_blocking_status_with_vendor_page_still_matches(self, tls_server):
+        srv = tls_server(status="HTTP/1.1 403 Forbidden",
+                         headers=["Set-Cookie: incap_ses_1_2=x"],
+                         body=b"<html><title>Access Denied</title>incapsula incident</html>")
+        out = probe_one(f"127.0.0.1:{srv.port}", "/", 5.0, do_http=True)
+        assert out["block"] and out["block"]["vendor"] == "imperva"
+
+    def test_verify_interception_page_is_not_a_block_finding(self, tls_server):
+        # an egress filter answers the attack-shaped query too; provoking it
+        # with --verify does not make it the TARGET's WAF
+        body = (b"<html><head><title>Invalid Connection</title></head><body>"
+                b"<h1>fortinet webfilter</h1></body></html>")
+        srv = tls_server(status="HTTP/1.1 403 Forbidden", body=body)
+        out = probe_one(f"127.0.0.1:{srv.port}", "/", 5.0, do_http=True, verify=True)
+        assert out.get("block") is None, "interception must not be a block finding"
+        assert out.get("interception"), "it must be reported as interception"

@@ -6,5 +6,5 @@ marker that Wangsu uses, so the CNAME is the distinguishing signal.
 Observed on Chinese railway and media hosts.
 """
 
-VENDOR = {'name': 'chinacache',
+VENDOR = {'name': 'chinacache', 'deployment': 'cloud',
  'cname': r'lxdns\.com'}

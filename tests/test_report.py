@@ -411,3 +411,48 @@ class TestDisplayOrder:
         before = [r["hostport"] for r in rs]
         display_order(rs, "risk")
         assert [r["hostport"] for r in rs] == before
+
+
+class TestErroredHostStillShowsEvidence:
+    """A connect failure can still carry DNS-level evidence (CNAME/PTR/
+    netblock resolve before the handshake) — the report must not hide it."""
+
+    def _errored_with_dns_verdict(self):
+        return {
+            "host": "x.example.com", "hostport": "x.example.com:443",
+            "error": "connect failed: timed out",
+            "cname": ["x.example.com.edgekey.net"], "ips": [], "ptr": [],
+            "tls": {"tls_error": "connect failed: timed out"},
+            "verdict": [{"vendor": "akamai", "signals": 1, "confidence": 20,
+                         "categories": ["cname"],
+                         "evidence": ["cname: x.example.com.edgekey.net"]}],
+        }
+
+    def test_table_keeps_the_dns_verdict(self):
+        from w4f.report import fmt_summary_table
+        out = fmt_summary_table([self._errored_with_dns_verdict()])
+        assert "akamai" in out            # not replaced by "-"
+        assert "connect failed" in out    # error still flagged
+
+    def test_table_shows_dash_when_nothing_was_learned(self):
+        from w4f.report import fmt_summary_table
+        r = self._errored_with_dns_verdict()
+        r["verdict"] = []
+        out = fmt_summary_table([r])
+        assert "unknown" not in out       # never scanned != unknown edge
+        assert "ERR connect failed" in out
+
+    def test_block_renders_error_and_evidence(self):
+        from w4f.report import fmt_compact_block
+        out = fmt_compact_block(self._errored_with_dns_verdict())
+        assert "connect failed" in out
+        assert "akamai" in out
+        assert "cname" in out
+
+    def test_block_stops_after_error_when_nothing_collected(self):
+        from w4f.report import fmt_compact_block
+        r = self._errored_with_dns_verdict()
+        r["verdict"] = []
+        out = fmt_compact_block(r)
+        assert "connect failed" in out
+        assert "unknown — no signature matched" not in out

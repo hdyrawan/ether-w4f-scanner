@@ -138,7 +138,27 @@ the tool and its documentation.
    "unknown edge" and look WAF-free. This bug shipped once and made a whole
    fleet look unprotected. F5 detection needs the `TS[a-fA-F0-9]{6,12}=`
    cookie (6–12 hex chars; shorter patterns miss the 10-char builds).
-7. **Keep the signature table ahead of the research, not behind it.**
+7. **A TLS-inspection middlebox on the SCANNER's path can impersonate the
+   target's edge.** A sweep found two unrelated banks in different countries
+   returning a byte-identical 403 whose certificate was issued by
+   `O=Fortinet, OU=Certificate Authority, CN=FG<appliance-serial>` — an
+   egress appliance re-signing the connection and refusing to proxy because
+   the upstream cert had expired. The obvious "fix" (adding `cert: fortinet`
+   to the fortiweb signature) would have fingerprinted *our own network* on
+   every host scanned from behind that box. Two consequences: (a) never
+   attribute a cert issued by an inspection CA to the target — that is what
+   `detect_interception()` / the `interception` field is for, and it warns
+   that **the reported SPKI pin is the middlebox's, not the host's**, which
+   silently breaks the tool's headline output; (b) an identical response
+   across unrelated targets is the tell that the box is local, not remote.
+8. **`match_block_page()` is only status-safe under `--verify`.** It was
+   written for a response where a block is already presumed, so some rules
+   match things a healthy host also sends — the Imperva rule keys on the
+   `incap_ses` cookie, which Imperva sets on *every* response. Calling it on
+   the passive GET regardless of status reported eleven healthy
+   Imperva-fronted hosts (200/301/302) as serving a block page. The passive
+   path must gate on a refusal status (`status_is_blocking`) before matching.
+9. **Keep the signature table ahead of the research, not behind it.**
    A bank's EdgeOne-fronted host reported "unknown edge" through v0.1.1 even
    though the consuming research had already documented the Tencent EdgeOne
    edge (`eo-log-uuid`/`eo-cache-status` headers, `eo.dnse4.com` CNAME).
