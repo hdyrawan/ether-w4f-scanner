@@ -217,6 +217,12 @@ Headers:
 - `wzws-ray` — **360 WangZhanBao** (网站卫士 / QiAnXin cloud WAF) edge stamp.
 - `x-azion-*` prefix (`x-azion-request-id`, `x-azion-edge-location`) —
   **Azion** (Brazilian edge).
+- `server: BunnyCDN-<POP>-<id>` — **Bunny** edge (bunny.net).
+- `x-cdn-provider: ... WEDOS ...` — **WEDOS** Global CDN (explicit provider
+  header; the `server: ATS` token is generic and NOT a signal).
+- `server: myracloud` — **Myra Security** managed WAF/CDN.
+- `server: nfront` — **Naver** front server (with nheos.com / naverncp.com
+  CNAMEs).
 - `x-rq: <pop> <n> <n> <n>` — **WordPress VIP** edge-cache geo header (per
   VIP docs; `sin1 0 40 9980` = Singapore PoP, `lhr3` = London). Customers
   also CNAME to `*.go-vip.net`. VIP runs on Akamai's edge, so a host can be
@@ -275,6 +281,12 @@ platforms (see the shared-platform markers below):
 | `*.a.shifen.com` (shifen.com) | Baidu BFE (Baidu's own front end) |
 | `*.qaxcloudwaf.com` / `*.icloudwaf.com` | QiAnXin / 360 WangZhanBao cloud WAF |
 | `*.jcloud-cdn.com` / `*.gslb.qianxun.com` | JD Cloud CDN / GSLB |
+| `*.bunnycdn.com` / `*.b-cdn.net` | Bunny (bunny.net CDN / storage) |
+| `cl-*.gcdn.co` | Gcore (per Gcore's own docs) |
+| `*.nheos.com` / `*.lb.naverncp.com` | Naver CDN / Naver Cloud Platform |
+| `*.kgslb.com` | Kakao GSLB (daum.net → daum-*.kgslb.com) |
+| `*.cdngc.net` / `*.cdnetworks.com` | CDNetworks (CDN Global Cache) |
+| `*.gslb*.sakura.ne.jp` | Sakura Internet (Japan) |
 
 **Shared platform markers (do NOT key rules on them alone):**
 `Via: …(Cdn Cache Server V2.0)` is emitted by BOTH Wangsu and ChinaCache;
@@ -361,18 +373,18 @@ default green:
 
 | color | vendors |
 |---|---|
-| bright yellow | Cloudflare, Cloudflare WAF, FortiWeb, Jiasule, 360 PanYun, 360 WangZhanBao |
-| blue | Akamai, Baidu BFE, Baidu CDN |
-| red | Fastly (+ WAF), Alibaba CDN |
-| cyan | AWS family (CloudFront/WAF/ELB/…), ChinaCache, Azion |
+| bright yellow | Cloudflare, Cloudflare WAF, FortiWeb, Jiasule, 360 PanYun, 360 WangZhanBao, Myra |
+| blue | Akamai, Baidu BFE, Baidu CDN, Sakura |
+| red | Fastly (+ WAF), Alibaba CDN, Bunny |
+| cyan | AWS family (CloudFront/WAF/ELB/…), ChinaCache, Azion, CDNetworks, Gcore |
 | bright blue | Azure family (Front Door/AppGW/…), Wangsu, Huawei Cloud CDN |
-| bright magenta | Tencent family, Vercel, Squarespace, Volcengine, WordPress VIP |
+| bright magenta | Tencent family, Vercel, Squarespace, Volcengine, WordPress VIP, Kakao |
 | magenta | Google GFE, GCP Armor |
 | bright red | F5, NetScaler, WSO2 |
 | bright cyan | Kong, Knownsec, UCloud WAF (uewaf) |
 | yellow | Imperva, Wangsu WAF (wswaf), Qrator, Variti |
 | dim | plain origins (nginx, Apache, IIS, Varnish, Envoy, HAProxy, …) |
-| green | everything else (default: Sucuri, Baishan, NetEase, Qiniu, JD Cloud, Airee, …) |
+| green | everything else (default: Sucuri, Baishan, NetEase, Qiniu, JD Cloud, Airee, WEDOS, Naver, …) |
 
 Plain origin stacks are deliberately **dimmed** so the edge-vs-origin
 distinction is visible at a glance. A new vendor gets green by default; add

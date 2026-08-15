@@ -74,6 +74,14 @@ VENDOR_COLORS: dict[str, str] = {
     "jd-cloud": _GREEN,
     "azion": _CYAN,
     "wordpress-vip": _BRIGHT_MAGENTA,
+    "bunny": _BRIGHT_RED,
+    "gcore": _BRIGHT_CYAN,
+    "wedos": _GREEN,
+    "myra": _BRIGHT_YELLOW,
+    "naver": _GREEN,
+    "kakao": _BRIGHT_MAGENTA,
+    "cdnetworks": _CYAN,
+    "sakura": _BLUE,
 }
 _VENDOR_PREFIX_COLORS: list[tuple[str, str]] = [
     ("aws-", _CYAN), ("azure-", _BRIGHT_BLUE), ("tencent-", _BRIGHT_MAGENTA),

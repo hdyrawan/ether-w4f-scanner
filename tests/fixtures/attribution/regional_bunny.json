@@ -1,0 +1,50 @@
+{
+  "observations": {
+    "host": "media.example.com",
+    "hostport": "media.example.com:443",
+    "port": 443,
+    "ips": ["198.51.100.42"],
+    "cname": ["media.example.com.bunnycdn.com"],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Example CA",
+      "subject": "CN=media.example.com",
+      "spki_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "days_remaining": 90
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Example CA",
+        "subject": "CN=media.example.com",
+        "spki_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "days_remaining": 90
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "BunnyCDN-AMS1-1001",
+          "via": "1.1 varnish",
+          "content-type": "video/mp4"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "media.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "bunny",
+    "min_band": "LOW",
+    "max_band": "LOW",
+    "layers": [
+      "varnish"
+    ],
+    "note": "regional EU edge (Bunny) over a varnish origin — edge stays ATTRIBUTED, the origin is a LAYER, never a competing edge candidate"
+  }
+}

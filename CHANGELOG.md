@@ -5,6 +5,46 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.40] — 2026-08-15
+
+Regional edge coverage batch (KR / JP / EU) — research-first, per the
+regional-coverage goal. **8 new vendors (94 → 102)**, every one backed by
+independently verified evidence with provenance recorded in
+[`docs/regional-coverage-matrix.md`](docs/regional-coverage-matrix.md).
+
+New vendors:
+
+- **Korea (3):** `naver` (`nheos.com` / `naverncp.com` CNAMEs + `server:
+  nfront`), `kakao` (`kgslb.com` GSLB CNAME — Kakao's own portal → daum-*.kgslb.com),
+  `cdnetworks` (`cdngc.net` / `cdnetworks.com` CNAMEs — CDN Global Cache).
+- **Japan (1):** `sakura` (`*.gslb*.sakura.ne.jp` CNAME).
+- **Europe (4):** `bunny` (`Server: BunnyCDN-<POP>-<id>` + bunnycdn.com /
+  b-cdn.net CNAMEs), `gcore` (`cl-*.gcdn.co` CNAME per Gcore's own docs),
+  `wedos` (`x-cdn-provider: WEDOS Global CDN` header), `myra` (`Server:
+  myracloud`).
+
+Evidence discipline:
+
+- **No netblocks added.** bunny and gcore both publish official edge lists
+  (api.bunny.net/system/edgeserverlist/plain; api.gcore.com/cdn/
+  public-ip-list) but both are /32-granular and churn — they fail the
+  stability gate from v0.1.39's sucuri methodology. Documented in the
+  matrix.
+- **Shared markers excluded:** the FECW cookie (CDNetworks + Wangsu) and
+  `server: ATS` (WEDOS's Apache Traffic Server is generic) are NOT signals;
+  the cdnetworks rule keys on CNAME only.
+- **Rejected with documentation:** NHN Toast (GTM-shaped CNAME), Leaseweb
+  (own site Fastly-served), Voxility (`not-a-bot` cookie too generic),
+  XServer/IIJ/J-Stream/KDDI/NTT/BIGLOBE/KT/LG U+/Link11/CDN77 (no passive
+  signal), Kingsoft/QingCloud/UCloud CDN (self-CNAME only, no customer
+  evidence this pass).
+
+Tests: +23 (416 passed, 5 skipped) — positive/negative per new rule, the
+FECW shared-cookie collision negative, and 3 new attribution-corpus
+fixtures (regional_naver, regional_bunny with a varnish LAYER,
+regional_shared_cookie_unknown). Corpus tally (11 fixtures): 6 correct /
+1 ambiguous / 2 unknown / 1 intercepted / 1 error / 0 incorrect.
+
 ## [0.1.39] — 2026-08-15
 
 Netblock coverage — first batch. `sucuri` gains its officially-published

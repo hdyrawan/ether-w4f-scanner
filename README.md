@@ -9,7 +9,7 @@
  ░░███████████         ░███░   ░███
   ░░████░████          █████   █████
    ░░░░ ░░░░          ░░░░░   ░░░░░
- passive TLS / CDN / WAF / edge fingerprinting · v0.1.39
+ passive TLS / CDN / WAF / edge fingerprinting · v0.1.40
 ```
 
 [![tests](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml/badge.svg)](https://github.com/hdyrawan/w4f/actions/workflows/ci.yml)
@@ -555,24 +555,27 @@ serves plain nginx to normal requests). See
 
 ### Signature coverage
 
-**94 vendors** across seven families — each one a file under
+**102 vendors** across seven families — each one a file under
 `w4f/signatures/` (copy `_template.py` to add one; see
 [`docs/vendor-signatures.md`](docs/vendor-signatures.md) for the
-contributor guide):
+contributor guide and
+[`docs/regional-coverage-matrix.md`](docs/regional-coverage-matrix.md) for
+the regional research decisions):
 
-- **CDN/edge** (38): Cloudflare, Cloudflare WAF, Imperva, Akamai (incl.
+- **CDN/edge** (45): Cloudflare, Cloudflare WAF, Imperva, Akamai (incl.
   Kona + Bot Manager `E3D=`), AWS CloudFront / WAF / ELB / Global
   Accelerator / S3 / EC2, Fastly (+ WAF/Signal Sciences), Azure Front Door,
   Azure App Gateway, ArvanCloud, Tencent EdgeOne / CDN, Baidu Yunjiasu,
   Baidu BFE, Baidu CDN, Alibaba CDN, Wangsu, ChinaCache, Huawei Cloud CDN,
   Volcengine DCDN, ByteDance, 360 PanYun, Baishan, NetEase CDN,
-  Qiniu, JD Cloud, Airee, Azion, Edgecast, MaxCDN, KeyCDN, StackPath,
+  Qiniu, JD Cloud, Airee, Azion, **Bunny, Gcore, WEDOS, Naver, Kakao,
+  CDNetworks, Sakura**, Edgecast, MaxCDN, KeyCDN, StackPath,
   Zenedge, DDoS-Guard.
-- **WAF/protection** (23): FortiWeb, F5 BIG-IP ASM, NetScaler, GTM/GSLB,
+- **WAF/protection** (24): FortiWeb, F5 BIG-IP ASM, NetScaler, GTM/GSLB,
   Sucuri, ModSecurity, NAXSI, Wallarm, Wordfence, Zscaler, Google Cloud
   Armor, Radware, Reblaze, Barracuda, Huawei Cloud WAF, SafeDog, Jiasule,
   Wangsu WAF (wswaf), Knownsec Chuang Yu Shield, 360 WangZhanBao (WZWS),
-  Qrator, Variti, UCloud WAF (uewaf).
+  Qrator, Variti, UCloud WAF (uewaf), **Myra**.
 - **Bot management** (5): DataDome, PerimeterX/HUMAN, Kasada, Shape
   Security, Arkose.
 - **API gateways / platform edges** (15): Kong, Tyk, Apigee, Azure API

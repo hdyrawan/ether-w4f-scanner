@@ -1,0 +1,44 @@
+{
+  "observations": {
+    "host": "shop.example.com",
+    "hostport": "shop.example.com:443",
+    "port": 443,
+    "ips": ["203.0.113.77"],
+    "cname": [],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Example CA",
+      "subject": "CN=shop.example.com",
+      "spki_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "days_remaining": 45
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Example CA",
+        "subject": "CN=shop.example.com",
+        "spki_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "days_remaining": 45
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "content-type": "text/html"
+        },
+        "set-cookie-list": [
+          "FECW=e98bc380354a46d6782c2840629b11ecd674cea2b1d8f7f621ea85ff7bdf049a; path=/"
+        ],
+        "redirects": [],
+        "final_host": "shop.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "UNKNOWN",
+    "note": "FECW is a SHARED marker (CDNetworks + Wangsu) — a lone shared cookie must not attribute any vendor"
+  }
+}

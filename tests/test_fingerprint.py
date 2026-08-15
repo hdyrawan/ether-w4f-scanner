@@ -503,7 +503,7 @@ class TestChineseEdges:
         assert "aliyun" in [m["vendor"] for m in fingerprint(r)]
 
     def test_aliyun_kunlun_cname(self):
-        # kunlun*.com = Alibaba CDN (昆仑) — www.gold678.com.w.kunlunca.com
+        # kunlun*.com = Alibaba CDN (昆仑) — a customer CNAME w.kunlunca.com
         r = _result(cname=["cdn.example.com.w.kunlunca.com"])
         assert "aliyun" in [m["vendor"] for m in fingerprint(r)]
 
@@ -630,12 +630,91 @@ class TestChineseEdges:
         assert "fortiweb" not in names
         assert "nginx" in names
 
+
+class TestRegionalEdges:
+    """KR/JP/EU regional edges (v0.1.40 research batch)."""
+
+    def test_bunny_server_token(self):
+        r = _result(headers={"server": "BunnyCDN-ID1-1201"})
+        assert "bunny" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_bunny_cname(self):
+        r = _result(cname=["host.example.com.bunnycdn.com"])
+        assert "bunny" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_bunny_does_not_fire_on_plain_nginx(self):
+        r = _result(headers={"server": "nginx/1.24.0"})
+        assert "bunny" not in [m["vendor"] for m in fingerprint(r)]
+
+    def test_gcore_cname(self):
+        r = _result(cname=["cl-abcd1234.gcdn.co"])
+        assert "gcore" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_gcore_does_not_fire_on_example(self):
+        r = _result(cname=["host.example.com"], headers={"server": "nginx"})
+        assert "gcore" not in [m["vendor"] for m in fingerprint(r)]
+
+    def test_wedos_x_cdn_provider(self):
+        r = _result(headers={"x-cdn-provider": "WEDOS Global CDN (WEDOS.delivery)",
+                             "server": "ATS"})
+        assert "wedos" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_wedos_does_not_fire_on_other_provider(self):
+        r = _result(headers={"x-cdn-provider": "SomeOtherCDN"})
+        assert "wedos" not in [m["vendor"] for m in fingerprint(r)]
+
+    def test_myra_server(self):
+        r = _result(headers={"server": "myracloud"})
+        assert "myra" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_naver_nfront_server(self):
+        r = _result(headers={"server": "nfront"})
+        assert "naver" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_naver_nheos_cname(self):
+        r = _result(cname=["www.example.com.nheos.com"])
+        assert "naver" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_naver_ncp_cname(self):
+        r = _result(cname=["sm-waf-lb-1234-01.kr.lb.naverncp.com"])
+        assert "naver" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_naver_does_not_fire_on_nginx(self):
+        r = _result(headers={"server": "nginx/1.24.0"})
+        assert "naver" not in [m["vendor"] for m in fingerprint(r)]
+
+    def test_kakao_kgslb_cname(self):
+        r = _result(cname=["daum-4vdtymgd.kgslb.com"])
+        assert "kakao" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_kakao_does_not_fire_on_example(self):
+        r = _result(cname=["host.example.com"])
+        assert "kakao" not in [m["vendor"] for m in fingerprint(r)]
+
+    def test_cdnetworks_cdngc_cname(self):
+        r = _result(cname=["www.example.com.cdngc.net"])
+        assert "cdnetworks" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_cdnetworks_fecw_cookie_is_not_a_signal(self):
+        # FECW is a SHARED marker (CDNetworks + Wangsu) — the cookie alone
+        # must not claim cdnetworks.
+        r = _result(cookies=["FECW=e98bc380354a46d6782c2840629b11ecd674cea2b1d8f7f621ea85ff7bdf049a"])
+        assert "cdnetworks" not in [m["vendor"] for m in fingerprint(r)]
+
+    def test_sakura_gslb_cname(self):
+        r = _result(cname=["site-113401987442.gslb12.sakura.ne.jp"])
+        assert "sakura" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_sakura_does_not_fire_on_example(self):
+        r = _result(cname=["host.example.com"])
+        assert "sakura" not in [m["vendor"] for m in fingerprint(r)]
+
     def test_360wangzhanbao_wzws_header(self):
         r = _result(headers={"wzws-ray": "002-1786734657.007-cache02fst-waf04fst"})
         assert "360wangzhanbao" in [m["vendor"] for m in fingerprint(r)]
 
     def test_360wangzhanbao_cname(self):
-        r = _result(cname=["0417861b351234d9.qaxcloudwaf.com"])
+        r = _result(cname=["host.qaxcloudwaf.com"])
         assert "360wangzhanbao" in [m["vendor"] for m in fingerprint(r)]
 
     def test_variti_server(self):

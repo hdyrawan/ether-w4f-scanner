@@ -1,0 +1,46 @@
+{
+  "observations": {
+    "host": "www.example.com",
+    "hostport": "www.example.com:443",
+    "port": 443,
+    "ips": ["203.0.113.10"],
+    "cname": ["www.example.com.nheos.com"],
+    "ptr": [],
+    "error": null,
+    "chain_verified": true,
+    "cert": {
+      "issuer_org": "Example CA",
+      "subject": "CN=www.example.com",
+      "spki_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "days_remaining": 60
+    },
+    "tls": {
+      "tls_version": "TLSv1.3",
+      "alpn": "h2",
+      "mtls": false,
+      "cert": {
+        "issuer_org": "Example CA",
+        "subject": "CN=www.example.com",
+        "spki_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "days_remaining": 60
+      },
+      "http": {
+        "status": "HTTP/1.1 200 OK",
+        "headers": {
+          "server": "nfront",
+          "content-type": "text/html"
+        },
+        "set-cookie-list": [],
+        "redirects": [],
+        "final_host": "www.example.com"
+      }
+    }
+  },
+  "expected": {
+    "state": "ATTRIBUTED",
+    "vendor": "naver",
+    "min_band": "LOW",
+    "max_band": "LOW",
+    "note": "regional edge attributed from distinctive CNAME (nheos.com) + nfront server token; category weight lands at LOW"
+  }
+}
