@@ -165,6 +165,28 @@ class TestNewSignatures:
         assert "aws-global-accelerator" in self._names(
             ips=["15.197.225.128", "3.33.251.168"])
         assert "aws-global-accelerator" in self._names(ips=["3.33.251.168"])
+
+    def test_sucuri_netblock_positive(self):
+        # Sucuri's own published firewall ranges — a fronted host resolves into
+        # them, so the netblock fingerprints Sucuri even with headers cloaked.
+        assert "sucuri" in self._names(ips=["192.88.134.10"])  # 192.88.134.0/23
+        assert "sucuri" in self._names(ips=["185.93.230.5"])   # 185.93.228.0/22
+        assert "sucuri" in self._names(ips=["208.109.1.1"])    # 208.109.0.0/22
+        assert "sucuri" in self._names(ips=["2a02:fe80::1"])   # 2a02:fe80::/29
+
+    def test_sucuri_netblock_negative(self):
+        # addresses just outside the published ranges must NOT match — a
+        # netblock is weight-30 hard evidence, so an over-broad range would be
+        # a false positive on the strongest signal
+        assert "sucuri" not in self._names(ips=["192.88.136.1"])  # past the /23
+        assert "sucuri" not in self._names(ips=["8.8.8.8"])       # unrelated
+
+    def test_sucuri_netblock_is_hard_evidence(self):
+        # the netblock lifts sucuri out of the header-only (spoofable) band
+        ver = _fingerprint_result(ips=["66.248.201.1"])  # 66.248.200.0/22
+        s = next(m for m in ver if m["vendor"] == "sucuri")
+        assert "netblock" in s["categories"]
+        assert s["confidence"] >= 30  # MEDIUM+, not LOW
         assert "aws-global-accelerator" not in self._names(ips=["8.8.8.8"])
 
     def test_azure_frontdoor_config_nocache(self):

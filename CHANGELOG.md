@@ -5,6 +5,32 @@ fingerprinting. Versions are semver; a `v*` tag push triggers the
 trusted-publisher release to PyPI (a version-bump commit alone does not
 publish — see AGENTS.md).
 
+## [0.1.39] — 2026-08-15
+
+Netblock coverage — first batch. `sucuri` gains its officially-published
+edge ranges, the strongest (weight-30) signal type, extending the set of
+vendors carried by IP ownership from six to seven.
+
+- **`sucuri` netblocks.** Sucuri is a pure-play cloud WAF/CDN, so a fronted
+  host resolves into Sucuri's own anycast space — the netblock corroborates
+  the header/block-page match and, more usefully, still fingerprints Sucuri
+  when it cloaks the origin's headers or refuses the passive GET (DNS +
+  netblock need no HTTP at all). Ranges are Sucuri's OWN published Firewall
+  IP list (`docs.sucuri.net`, verified 2026-08-15), not ASN/BGP-derived
+  prefixes; a dated provenance note lives in the signature file.
+- **Scope discipline.** Only pure-play edges whose entire IP space *is* their
+  edge are eligible — product-tier variants that share a parent's IPs
+  (`cloudflare-waf`, `fastly-waf`) must never inherit the parent's ranges, or
+  every plain-CDN host would false-match the WAF tier. `stackpath`/`maxcdn`
+  (CDN discontinued 2023 → reassignment risk) and `ddos-guard` (no official
+  list, only third-party ASN aggregators) were evaluated and deliberately
+  left header/cookie-only.
+- +3 tests (393 total): Sucuri netblock positive (four ranges), negative
+  (addresses just outside the ranges must not match — a wrong netblock is a
+  false positive on the strongest signal), and hard-evidence band. The
+  `test_no_cross_vendor_netblock_overlap` guard (0.1.38) covers the new
+  ranges.
+
 ## [0.1.38] — 2026-08-15
 
 Stabilization pass (external review): make the default output calm and

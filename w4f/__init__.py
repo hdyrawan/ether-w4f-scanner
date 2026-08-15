@@ -9,7 +9,7 @@ Public API:
 
 from __future__ import annotations
 
-__version__ = "0.1.38"
+__version__ = "0.1.39"
 
 __all__ = ["fingerprint_host"]
 
