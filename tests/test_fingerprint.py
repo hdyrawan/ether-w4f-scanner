@@ -615,6 +615,21 @@ class TestChineseEdges:
         r = _result(headers={"server": "QRATOR"})
         assert "qrator" in [m["vendor"] for m in fingerprint(r)]
 
+    def test_fortiweb_cookiesession1_cookie(self):
+        # FortiWeb sets cookiesession1 on the FIRST response to every client
+        # (Fortinet docs, name immutable) — the reference "silent WAF" is now
+        # passively detectable. Value shape observed live: 32 hex chars.
+        r = _result(cookies=["cookiesession1=678B28832A82268B4BB25869D81C6285; Expires=Sat, 14 Aug 2027 18:36:48 GMT; Path=/; Secure"])
+        assert "fortiweb" in [m["vendor"] for m in fingerprint(r)]
+
+    def test_fortiweb_does_not_fire_without_cookie(self):
+        # No cookiesession1 -> no fortiweb from a plain origin
+        r = _result(headers={"server": "nginx/1.24.0"},
+                    cookies=["PHPSESSID=abc123; path=/"])
+        names = [m["vendor"] for m in fingerprint(r)]
+        assert "fortiweb" not in names
+        assert "nginx" in names
+
     def test_360wangzhanbao_wzws_header(self):
         r = _result(headers={"wzws-ray": "002-1786734657.007-cache02fst-waf04fst"})
         assert "360wangzhanbao" in [m["vendor"] for m in fingerprint(r)]
